@@ -14,7 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
 // 1. Initialize LINE LIFF
 function initLiff() {
   // Replace with your LIFF ID from LINE Developers Console
-  liff.init({ liffId: "2010392073-YqE2GeaU" })
+  liff.init({ liffId: "2010392073-d04GAnnm" })
     .then(() => {
       if (liff.isLoggedIn()) {
         liff.getProfile()
