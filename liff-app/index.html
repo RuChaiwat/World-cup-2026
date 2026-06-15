@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>World Cup 2026 Prediction App</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Top App Header -->
+    <header class="app-header" id="app-header" style="display: none;">
+      <div class="brand-title">
+        <span>🏆</span> WC 2026 Predictor
+      </div>
+      <div class="user-badge" id="user-badge">
+        <span>👤</span> <span id="display-name">Guest</span>
+      </div>
+    </header>
+
+    <!-- 1. Authentication / Registration Screen -->
+    <div id="screen-auth" class="screen active">
+      <div class="auth-container">
+        <div class="auth-card glass-panel">
+          <div class="logo-container">
+            <span style="font-size: 80px; filter: drop-shadow(0 0 10px rgba(245,158,11,0.5));">⚽</span>
+          </div>
+          <div>
+            <h1 class="auth-title">ฟุตบอลโลก 2026</h1>
+            <p class="auth-subtitle">เข้าสู่ระบบหรือลงทะเบียนเพื่อร่วมทายผลบอล</p>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label" for="input-emp-id">รหัสพนักงาน (Employee ID)</label>
+            <input type="text" id="input-emp-id" class="form-input" placeholder="ตัวอย่าง: EMP001" autocomplete="off">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="input-pin">รหัส PIN 4 หลัก</label>
+            <input type="password" id="input-pin" class="form-input" placeholder="••••" maxlength="4" pattern="[0-9]*" inputmode="numeric" autocomplete="off">
+          </div>
+
+          <button id="btn-login-submit" class="btn-primary">เข้าสู่ระบบ / ลงทะเบียน</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Matches Prediction Screen -->
+    <div id="screen-matches" class="screen">
+      <div class="section-title">
+        <span>⚽ แมตช์การแข่งขัน</span>
+      </div>
+      
+      <!-- OpenChat Banner -->
+      <div class="openchat-banner" id="btn-open-chat">
+        <div class="openchat-text">
+          <h4>💬 ร่วมพูดคุย & ขิงผลบอล</h4>
+          <p>เข้าห้อง Line OpenChat เพื่อแชทสนทนากับเพื่อนร่วมงาน</p>
+        </div>
+        <span style="font-size: 24px;">➔</span>
+      </div>
+
+      <div class="match-list" id="match-list-container">
+        <!-- Rendered dynamically -->
+        <p style="text-align: center; color: var(--text-secondary);">กำลังโหลดแมตช์การแข่งขัน...</p>
+      </div>
+    </div>
+
+    <!-- 3. Tournament Winner Screen -->
+    <div id="screen-winner" class="screen">
+      <div class="section-title">
+        <span>🏆 ทายผลแชมป์โลก (Tournament Winner)</span>
+      </div>
+      
+      <div class="glass-panel champion-selector-card">
+        <div style="font-size: 50px;">🏆</div>
+        <h3>คุณคิดว่าทีมใดจะได้เป็นแชมป์โลก 2026?</h3>
+        <p style="font-size: 13px; color: var(--text-secondary); max-width: 320px;">
+          สามารถส่งได้เรื่อยๆ โดยระบบจะปิดรับทายผลทันทีเมื่อเข้าสู่การแข่งขันรอบ 4 ทีมสุดท้าย (Semifinals) ทายถูกรับ +10 คะแนน!
+        </p>
+        
+        <select id="select-champion" class="champ-select">
+          <option value="">-- เลือกทีมแชมป์โลก --</option>
+          <option value="Argentina">🇦🇷 Argentina</option>
+          <option value="Brazil">🇧🇷 Brazil</option>
+          <option value="England">🏴󠁧󠁢󠁥󠁮󠁧󠁿 England</option>
+          <option value="France">🇫🇷 France</option>
+          <option value="Germany">🇩🇪 Germany</option>
+          <option value="Spain">🇪🇸 Spain</option>
+          <option value="Portugal">🇵🇹 Portugal</option>
+          <option value="Italy">🇮🇹 Italy</option>
+          <option value="Netherlands">🇳🇱 Netherlands</option>
+          <option value="Belgium">🇧🇪 Belgium</option>
+          <option value="Croatia">🇭🇷 Croatia</option>
+          <option value="Uruguay">🇺🇾 Uruguay</option>
+          <option value="Mexico">🇲🇽 Mexico</option>
+          <option value="USA">🇺🇸 USA</option>
+          <option value="Japan">🇯🇵 Japan</option>
+          <option value="South Korea">🇰🇷 South Korea</option>
+          <!-- Contender options can be expanded -->
+        </select>
+        
+        <button id="btn-submit-winner" class="btn-primary" style="width: 100%;">ส่งคำทำนายแชมป์โลก</button>
+      </div>
+    </div>
+
+    <!-- 4. Leaderboard Screen -->
+    <div id="screen-leaderboard" class="screen">
+      <div class="section-title">
+        <span>📊 ตารางคะแนนสะสม (Top 10)</span>
+      </div>
+      
+      <div class="leaderboard-list" id="leaderboard-container">
+        <!-- Rendered dynamically -->
+        <p style="text-align: center; color: var(--text-secondary);">กำลังโหลดตารางคะแนน...</p>
+      </div>
+    </div>
+
+    <!-- Bottom Navigation Bar -->
+    <nav class="bottom-nav" id="bottom-nav" style="display: none;">
+      <div class="nav-item active" data-screen="matches">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+        </svg>
+        <span>ทายผลบอล</span>
+      </div>
+      <div class="nav-item" data-screen="winner">
+        <svg viewBox="0 0 24 24">
+          <path d="M18 2H6c-1.1 0-2 .9-2 2v7c0 2.24 1.47 4.15 3.51 4.79C8.36 17.13 10.02 18 12 18s3.64-.87 4.49-2.21C18.53 15.15 20 13.24 20 11V4c0-1.1-.9-2-2-2zm-8 11.5v-2H8V7h8v2.5h-2v2h2v2h-6z"/>
+        </svg>
+        <span>ทายแชมป์</span>
+      </div>
+      <div class="nav-item" data-screen="leaderboard">
+        <svg viewBox="0 0 24 24">
+          <path d="M16 11V3H8v8H2v10h20V11h-6zm-6-6h4v14h-4V5zm-6 8h4v6H4v-6zm16 6h-4v-6h4v6z"/>
+        </svg>
+        <span>ตารางคะแนน</span>
+      </div>
+    </nav>
+
+    <!-- Global Toast notification -->
+    <div id="toast-container" class="toast"></div>
+  </div>
+
+  <!-- LINE LIFF SDK -->
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

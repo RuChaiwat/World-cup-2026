@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WC 2026 Predictor - Admin Control Panel</title>
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <div class="admin-container">
+    <!-- Header -->
+    <header>
+      <div class="brand-title">
+        <span>⚙️</span> WC 2026 Admin Dashboard
+      </div>
+      <div class="key-input-container">
+        <label for="input-api-url" style="font-size: 11px; font-weight: 600; color: var(--text-secondary);">API:</label>
+        <input type="text" id="input-api-url" class="key-input" style="width: 250px;" placeholder="Google Apps Script URL">
+        <label for="input-api-key" style="font-size: 11px; font-weight: 600; color: var(--text-secondary);">TOKEN:</label>
+        <input type="password" id="input-api-key" class="key-input" style="width: 150px;" placeholder="Admin API Key">
+        <button id="btn-connect" class="btn btn-orange" style="padding: 4px 10px;">Connect</button>
+      </div>
+    </header>
+
+    <!-- Tab navigation -->
+    <div class="tabs">
+      <button id="tab-users" class="tab-btn active">👤 จัดการพนักงาน (Users)</button>
+      <button id="tab-matches" class="tab-btn">⚽ ผลแข่งขัน & Override (Matches)</button>
+    </div>
+
+    <!-- 1. Users Management View -->
+    <div id="view-users" class="dashboard-view active">
+      <div class="card">
+        <div class="table-controls">
+          <input type="text" id="search-users" class="search-input" placeholder="ค้นหารหัสพนักงาน หรือชื่อจริง...">
+          <button id="btn-reload-users" class="btn btn-blue">🔄 รีโหลดข้อมูล</button>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>รหัสพนักงาน (ID)</th>
+                <th>ชื่อ-นามสกุลจริง</th>
+                <th>รหัส PIN 4 หลัก</th>
+                <th>สถานะ LINE Link</th>
+                <th>การจัดการ</th>
+              </tr>
+            </thead>
+            <tbody id="users-table-body">
+              <tr>
+                <td colspan="5" style="text-align: center; color: var(--text-secondary);">กรุณากรอก API URL และ TOKEN แล้วกด Connect</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Match Override View -->
+    <div id="view-matches" class="dashboard-view">
+      <div class="card">
+        <div class="table-controls">
+          <span style="font-weight: 500; font-size: 14px; color: var(--text-secondary);">
+            * การตั้งค่า Override จะทำหน้าที่เขียนทับสกอร์จริงที่ดึงมาจาก Football API เพื่อป้องกันข้อผิดพลาด
+          </span>
+          <button id="btn-reload-matches" class="btn btn-blue">🔄 รีโหลดข้อมูล</button>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>รหัสคู่แข่ง</th>
+                <th>แมตช์การแข่งขัน</th>
+                <th>วันที่แข่ง</th>
+                <th>รอบ</th>
+                <th>สถานะ</th>
+                <th>ผลจริง</th>
+                <th>ผล Override</th>
+                <th>การจัดการ</th>
+              </tr>
+            </thead>
+            <tbody id="matches-table-body">
+              <tr>
+                <td colspan="8" style="text-align: center; color: var(--text-secondary);">กรุณากรอก API URL และ TOKEN แล้วกด Connect</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Reset PIN -->
+  <div class="modal-overlay" id="modal-reset-pin">
+    <div class="modal">
+      <div class="modal-header">🔑 รีเซ็ตรหัส PIN พนักงาน</div>
+      <div class="form-group">
+        <label class="form-label">ชื่อพนักงาน</label>
+        <input type="text" id="reset-user-name" class="form-input" readonly style="opacity: 0.6;">
+      </div>
+      <div class="form-group">
+        <label class="form-label">รหัสพนักงาน</label>
+        <input type="text" id="reset-user-id" class="form-input" readonly style="opacity: 0.6;">
+      </div>
+      <div class="form-group">
+        <label class="form-label">รหัส PIN ใหม่ (4 หลัก)</label>
+        <input type="text" id="reset-user-pin" class="form-input" placeholder="ตัวอย่าง: 1234" maxlength="4" pattern="[0-9]*" inputmode="numeric">
+      </div>
+      <div class="modal-footer">
+        <button id="btn-cancel-reset" class="btn" style="background: rgba(255,255,255,0.1); color:#fff;">ยกเลิก</button>
+        <button id="btn-save-reset" class="btn btn-orange">บันทึกรหัส PIN ใหม่</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Override Score -->
+  <div class="modal-overlay" id="modal-override-score">
+    <div class="modal">
+      <div class="modal-header">⚽ ตังค่า Override สกอร์การแข่งขัน</div>
+      <div class="form-group" style="text-align: center;">
+        <span id="override-teams" style="font-weight: 700; font-size: 16px;">Team A VS Team B</span>
+      </div>
+      <input type="hidden" id="override-match-id">
+      
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div class="form-group">
+          <label class="form-label" id="label-home-score">สกอร์ฝั่งเหย้า</label>
+          <input type="number" id="override-home-score" class="form-input" placeholder="เช่น: 2" min="0">
+        </div>
+        <div class="form-group">
+          <label class="form-label" id="label-away-score">สกอร์ฝั่งเยือน</label>
+          <input type="number" id="override-away-score" class="form-input" placeholder="เช่น: 1" min="0">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">ทีมที่ผ่านเข้ารอบ (กรณีรอบ Knockout)</label>
+        <select id="override-qualified-team" class="form-input" style="background: #1e293b;">
+          <option value="">-- ไม่ระบุ (รอบแบ่งกลุ่ม) --</option>
+          <option value="" id="opt-home-team">Home Team</option>
+          <option value="" id="opt-away-team">Away Team</option>
+        </select>
+      </div>
+
+      <div style="font-size: 11px; color: var(--text-secondary);">
+        * เว้นช่องว่างไว้หากต้องการล้างข้อมูล Override และปล่อยให้ระบบดึงสกอร์อัตโนมัติ
+      </div>
+
+      <div class="modal-footer">
+        <button id="btn-cancel-override" class="btn" style="background: rgba(255,255,255,0.1); color:#fff;">ยกเลิก</button>
+        <button id="btn-save-override" class="btn btn-orange">บันทึก Override</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Global Alert -->
+  <div id="alert-box" class="toast-alert"></div>
+
+  <script src="admin.js"></script>
+</body>
+</html>
