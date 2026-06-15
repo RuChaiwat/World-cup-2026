@@ -1,28 +1,11 @@
 import os
 import json
 import requests
-import gspread
-from google.oauth2.service_account import Credentials
 
 # Configuration
-SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "YOUR_SPREADSHEET_ID_HERE")
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://script.google.com/macros/s/REPLACE-WITH-YOUR-GAS-WEB-APP-ID/exec")
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_LIFF_URL = os.environ.get("LINE_LIFF_URL", "https://liff.line.me/YOUR_LIFF_ID")
-
-# Google Sheets Scopes
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive"
-]
-
-def get_gspread_client():
-    creds_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
-    if creds_json:
-        creds_data = json.loads(creds_json)
-        creds = Credentials.from_service_account_info(creds_data, scopes=SCOPES)
-    else:
-        creds = Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
-    return gspread.authorize(creds)
 
 def build_flex_message(top10):
     """
@@ -30,9 +13,9 @@ def build_flex_message(top10):
     """
     rows = []
     for player in top10:
-        rank = player["Rank"]
-        name = player["Full_Name"]
-        pts = player["Total_Points"]
+        rank = player.get("Rank", "-")
+        name = player.get("Full_Name", "Unknown")
+        pts = player.get("Total_Points", 0)
         
         # Award medal emojis for top 3
         if rank == 1:
@@ -150,19 +133,23 @@ def build_flex_message(top10):
     return bubble
 
 def broadcast_leaderboard():
-    print("Reading leaderboard data...")
-    gc = get_gspread_client()
-    sh = gc.open_by_key(SPREADSHEET_ID)
-    lead_sheet = sh.worksheet("Leaderboard")
+    print("Fetching leaderboard data from Apps Script...")
+    url_lead = f"{API_BASE_URL}?action=getLeaderboard"
     
-    # Read rows
-    data = lead_sheet.get_all_records()
-    if not data:
+    try:
+        response = requests.get(url_lead, timeout=15)
+        data = response.json()
+        leaderboard = data.get("leaderboard", [])
+    except Exception as e:
+        print("Failed to fetch leaderboard from Apps Script:", e)
+        return
+        
+    if not leaderboard:
         print("Leaderboard is empty. Skipping broadcast.")
         return
         
     # Get top 10 (sorted by Rank ascending)
-    sorted_board = sorted(data, key=lambda x: int(x["Rank"]))
+    sorted_board = sorted(leaderboard, key=lambda x: int(x.get("Rank", 999)))
     top10 = sorted_board[:10]
     
     # Assemble LINE payload
@@ -183,23 +170,19 @@ def broadcast_leaderboard():
         print(json.dumps(payload, indent=2, ensure_ascii=False))
         return
         
-    url = "https://api.line.me/v2/bot/message/broadcast"
+    url_broadcast = "https://api.line.me/v2/bot/message/broadcast"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"
     }
     
     print("Broadcasting LINE Flex message to OA followers...")
-    response = requests.post(url, headers=headers, json=payload, timeout=15)
+    response_bc = requests.post(url_broadcast, headers=headers, json=payload, timeout=15)
     
-    if response.status_code == 200:
+    if response_bc.status_code == 200:
         print("Leaderboard broadcasted successfully!")
     else:
-        print(f"Broadcast failed ({response.status_code}):", response.text)
+        print(f"Broadcast failed ({response_bc.status_code}):", response_bc.text)
 
 if __name__ == "__main__":
-    try:
-        broadcast_leaderboard()
-    except Exception as e:
-        print("Broadcast execution failed:", e)
-        exit(1)
+    broadcast_leaderboard()

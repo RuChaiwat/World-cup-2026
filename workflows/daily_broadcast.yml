@@ -1,0 +1,33 @@
+name: Broadcast Daily Leaderboard to LINE OA
+
+on:
+  schedule:
+    # Runs at 12:00 PM ICT (05:00 UTC) every day
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+    # Allows manual trigger of the leaderboard announcement
+
+jobs:
+  broadcast:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Run Leaderboard Broadcast Script
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_LIFF_URL: ${{ secrets.LINE_LIFF_URL }}
+        run: python scripts/broadcast_leaderboard.py
