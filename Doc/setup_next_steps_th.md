@@ -26,13 +26,37 @@
    - `Tournament_Winner_Submissions`
    - `Leaderboard`
 3. ใส่หัวคอลัมน์ตาม `Doc/db_setup.md`
+   - เปิดไฟล์ `Doc/db_setup.md` แล้วคัดลอกชื่อคอลัมน์ของแต่ละแท็บไปวางที่แถวที่ 1 ของ Google Sheet ให้ตรงตัวอักษรทุกตัว
+   - ห้ามเปลี่ยนชื่อคอลัมน์ เช่น `Employee_ID`, `Match_ID`, `Kickoff_Time` เพราะ `backend/api.js` อ่าน/เขียนข้อมูลด้วยชื่อ header เหล่านี้
+   - แนะนำให้ format คอลัมน์รหัส เช่น `Employee_ID`, `Match_ID`, `User_PIN` เป็น Plain text เพื่อไม่ให้ Google Sheets ตัดเลข 0 นำหน้า
+   - หลังสร้าง header แล้ว ให้ใส่ข้อมูลทดสอบอย่างน้อย 1 user ใน `User_Master` และ 1 match ใน `Matches` เพื่อใช้ทดสอบ API ก่อนเชื่อม LINE
 4. เปิด `Extensions > Apps Script`
+   - เปิดจาก Google Sheet ไฟล์เดียวกับที่สร้างแท็บไว้ เพื่อให้ Apps Script ใช้ `SpreadsheetApp.getActiveSpreadsheet()` กับไฟล์นี้ได้ทันที
+   - ตั้งชื่อ project เช่น `World Cup 2026 Prediction API` เพื่อแยกจาก script อื่นในบัญชี Google
+   - หาก Apps Script ถามสิทธิ์ ให้ใช้บัญชี Google เจ้าของ Sheet หรือบัญชี service/admin ที่ทีมใช้ดูแลระบบ
 5. คัดลอกโค้ดจาก `backend/api.js` ไปวางใน Apps Script
+   - ใน Apps Script ให้เปิดไฟล์ `Code.gs` แล้วลบโค้ดตัวอย่างเดิมออกทั้งหมด
+   - คัดลอกโค้ดทั้งหมดจาก `backend/api.js` ไปวางแทน จากนั้นกด Save
+   - ไม่ต้องใช้ Node.js หรือ npm สำหรับส่วนนี้ เพราะโค้ดถูกออกแบบให้รันใน Google Apps Script runtime
+   - ก่อน deploy ให้ตรวจว่าชื่อแท็บใน Google Sheet ตรงกับที่โค้ดเรียก เช่น `User_Master`, `Matches`, `Raw_Submissions`, `Tournament_Winner_Submissions`, `Leaderboard`
 6. เปลี่ยนค่า `ADMIN_API_KEY` ใน Apps Script เป็นรหัสลับจริง ห้ามใช้ค่าเดิมในไฟล์ตัวอย่าง
+   - ค่าเดิม `WC2026_ADMIN_SECURE_TOKEN_XYZ` เป็นแค่ตัวอย่าง ห้ามใช้จริง
+   - แนะนำให้สร้าง token ยาวอย่างน้อย 32 ตัวอักษร มีตัวพิมพ์เล็ก/ใหญ่ ตัวเลข และสัญลักษณ์ เช่นสร้างจาก password manager
+   - เก็บค่าเดียวกันนี้ไว้ใช้ใน Admin Panel และ GitHub Secret ชื่อ `ADMIN_API_KEY`
+   - อย่าส่ง key นี้ใน LINE chat, commit ลง git, หรือใส่ในเอกสารที่แชร์ให้คนทั่วไป
 7. Deploy เป็น Web App:
-   - Execute as: `Me`
-   - Who has access: `Anyone`
+   - ใน Apps Script กด `Deploy > New deployment`
+   - เลือก type เป็น `Web app`
+   - ใส่ Description เช่น `Initial production web app`
+   - ตั้ง `Execute as` เป็น `Me` เพื่อให้ API อ่าน/เขียน Google Sheet ด้วยสิทธิ์ของเจ้าของ script
+   - ตั้ง `Who has access` เป็น `Anyone` เพราะ frontend, admin panel และ GitHub Actions ต้องเรียกผ่าน HTTPS ได้
+   - กด Deploy แล้ว authorize สิทธิ์ที่ Apps Script ขอ โดยตรวจว่าเป็น project ที่เราสร้างเอง
 8. คัดลอก Web App URL ที่ลงท้ายด้วย `/exec`
+   - URL นี้คือ `API_BASE_URL` ของระบบ ให้คัดลอกเก็บไว้ทันทีหลัง deploy
+   - นำไปใส่ใน `liff-app/app.js` ตรง `API_BASE_URL` และใช้กรอกใน Admin Panel ช่อง API URL
+   - นำไปเพิ่มใน GitHub Actions Secret ชื่อ `API_BASE_URL`
+   - หากแก้โค้ด Apps Script ภายหลัง ต้องกด deploy version ใหม่ หรือ update deployment ไม่เช่นนั้น URL เดิมอาจยังรันโค้ดเวอร์ชันเก่า
+   - ทดสอบเบื้องต้นด้วยการเปิด `<Web App URL>?action=getLeaderboard` ใน browser ถ้าเชื่อมถูกต้องควรได้ JSON กลับมา ไม่ใช่หน้า HTML error
 
 ### ค่าที่ได้จากขั้นตอนนี้
 
