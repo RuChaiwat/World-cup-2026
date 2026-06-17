@@ -29,7 +29,6 @@ function doGet(e) {
  * Handle HTTP POST Requests
  */
 function doPost(e) {
-  const action = e.parameter.action;
   let body = {};
   
   if (e.postData && e.postData.contents) {
@@ -39,6 +38,8 @@ function doPost(e) {
       return jsonResponse({ error: "Malformed JSON body" }, 400);
     }
   }
+
+  const action = e.parameter.action || body.action;
   
   try {
     switch (action) {
@@ -407,7 +408,7 @@ function handleAdminSyncMatches(body) {
   let updatedCount = 0;
   
   matches.forEach(m => {
-    const matchIdx = data.findIndex(row => String(row.Match_ID) === String(m.matchId));
+    const matchIdx = findMatchIndexForSync(data, m);
     if (matchIdx !== -1) {
       const row = data[matchIdx];
       
@@ -430,6 +431,31 @@ function handleAdminSyncMatches(body) {
   recalculateLeaderboard(ss);
   
   return jsonResponse({ success: true, message: `Synced ${updatedCount} matches and updated leaderboard.` });
+}
+
+
+function findMatchIndexForSync(sheetRows, incomingMatch) {
+  const incomingMatchId = String(incomingMatch.matchId || "").trim();
+  if (incomingMatchId) {
+    const idMatchIdx = sheetRows.findIndex(row => String(row.Match_ID).trim() === incomingMatchId);
+    if (idMatchIdx !== -1) return idMatchIdx;
+  }
+
+  const incomingHome = normalizeTeamName(incomingMatch.homeTeam);
+  const incomingAway = normalizeTeamName(incomingMatch.awayTeam);
+  if (!incomingHome || !incomingAway) return -1;
+
+  return sheetRows.findIndex(row =>
+    normalizeTeamName(row.Home_Team) === incomingHome &&
+    normalizeTeamName(row.Away_Team) === incomingAway
+  );
+}
+
+function normalizeTeamName(teamName) {
+  return String(teamName || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
 }
 
 // ==========================================
