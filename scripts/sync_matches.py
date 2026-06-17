@@ -212,8 +212,10 @@ def main():
     # POST updates to Apps Script API
     print(f"Submitting {len(finished_matches)} match updates to Apps Script API...")
 
-    url = f"{API_BASE_URL}?action=adminSyncMatches"
+    query_separator = "&" if "?" in API_BASE_URL else "?"
+    url = f"{API_BASE_URL}{query_separator}action=adminSyncMatches"
     payload = {
+        "action": "adminSyncMatches",
         "apiKey": ADMIN_API_KEY,
         "matches": finished_matches,
     }
