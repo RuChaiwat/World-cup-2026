@@ -6,7 +6,7 @@ import requests
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://script.google.com/macros/s/REPLACE-WITH-YOUR-GAS-WEB-APP-ID/exec")
 ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "WC2026_ADMIN_SECURE_TOKEN_XYZ")
 FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY", "")
-FOOTBALL_API_URL = "https://v3.api-football.com/fixtures"
+FOOTBALL_API_URL = os.environ.get("FOOTBALL_API_URL", "https://v3.football.api-sports.io/fixtures")
 LEAGUE_ID = 1  # Example league ID
 SEASON = 2026
 
@@ -28,8 +28,27 @@ def get_fixtures_from_api():
     
     try:
         response = requests.get(FOOTBALL_API_URL, headers=headers, params=params, timeout=10)
+        response.raise_for_status()
         data = response.json()
+
+        if data.get("errors"):
+            print("Football API returned errors:", data.get("errors"))
+            return []
+
         return data.get("response", [])
+    except requests.exceptions.ConnectionError as e:
+        print("Error fetching from Football API: could not connect to", FOOTBALL_API_URL)
+        print("Connection details:", e)
+        print("Tip: verify DNS/network access or set FOOTBALL_API_URL=https://v3.football.api-sports.io/fixtures")
+        return []
+    except requests.exceptions.HTTPError as e:
+        print("Football API HTTP error:", e)
+        print("Response body:", response.text[:500] if 'response' in locals() else "")
+        return []
+    except ValueError as e:
+        print("Football API returned non-JSON response:", e)
+        print("Response body:", response.text[:500] if 'response' in locals() else "")
+        return []
     except Exception as e:
         print("Error fetching from Football API:", e)
         return []

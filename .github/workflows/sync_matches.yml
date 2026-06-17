@@ -30,5 +30,6 @@ jobs:
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
           ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           FOOTBALL_API_KEY: ${{ secrets.FOOTBALL_API_KEY }}
+          FOOTBALL_API_URL: ${{ vars.FOOTBALL_API_URL || 'https://v3.football.api-sports.io/fixtures' }}
           # MOCK_API: "false"
         run: python scripts/sync_matches.py
