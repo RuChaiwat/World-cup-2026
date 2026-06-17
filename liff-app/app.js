@@ -1,12 +1,14 @@
 // CONFIGURATION - Put your deployed Google Apps Script Web App URL here
 const API_BASE_URL = "https://script.google.com/macros/s/AKfycbx3Lu1FeP_pY591MF9OJJv61hEVRL_feSPQ_fkOq6r74ePHpKVCtt9vW97pq-avAMKfqA/exec";
-const OPENCHAT_URL = "https://line.me/ti/g2/YOUR_OPENCHAT_CODE"; // Line OpenChat/Group Join Link
+const OPENCHAT_URL = ""; // Line OpenChat/Group Join Link. Leave blank while OpenChat/OA is temporarily disabled.
+const SHOW_OPENCHAT = false; // Set to true when the LINE OpenChat/OA link is ready to show.
 
 let currentUser = null; // { employeeId, fullName, lineUserId }
 let matchesData = [];
 
 // Initialize App
 document.addEventListener("DOMContentLoaded", () => {
+  configureOpenChatBanner();
   initLiff();
   setupEventListeners();
 });
@@ -37,6 +39,16 @@ function initLiff() {
       // Fallback for browser testing
       showAuthScreen();
     });
+}
+
+
+function configureOpenChatBanner() {
+  const openChatButton = document.getElementById("btn-open-chat");
+  if (!openChatButton) return;
+
+  const shouldShowOpenChat = SHOW_OPENCHAT && Boolean(OPENCHAT_URL);
+  openChatButton.style.display = shouldShowOpenChat ? "flex" : "none";
+  openChatButton.setAttribute("aria-hidden", String(!shouldShowOpenChat));
 }
 
 // Check if LINE User ID is already linked
@@ -75,13 +87,16 @@ function setupEventListeners() {
   });
 
   // OpenChat Link Click Handler
-  document.getElementById("btn-open-chat").addEventListener("click", () => {
-    if (liff.isInClient()) {
-      liff.openWindow({ url: OPENCHAT_URL, external: true });
-    } else {
-      window.open(OPENCHAT_URL, "_blank");
-    }
-  });
+  const openChatButton = document.getElementById("btn-open-chat");
+  if (openChatButton && SHOW_OPENCHAT && OPENCHAT_URL) {
+    openChatButton.addEventListener("click", () => {
+      if (liff.isInClient()) {
+        liff.openWindow({ url: OPENCHAT_URL, external: true });
+      } else {
+        window.open(OPENCHAT_URL, "_blank");
+      }
+    });
+  }
 
   // Submit Winner Prediction Button
   document.getElementById("btn-submit-winner").addEventListener("click", handleSubmitWinner);
