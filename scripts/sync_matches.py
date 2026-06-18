@@ -13,6 +13,7 @@ API_SPORTS_URL = os.environ.get("FOOTBALL_API_URL", "https://v3.football.api-spo
 FOOTBALL_DATA_URL = os.environ.get("FOOTBALL_DATA_URL", "https://api.football-data.org/v4/competitions/WC/matches")
 LEAGUE_ID = 1  # API-SPORTS league ID for World Cup
 SEASON = 2026
+SYNC_BATCH_SIZE = int(os.environ.get("SYNC_BATCH_SIZE", "20"))
 
 
 def request_json(url, headers=None, params=None, provider_name="Football API"):
@@ -216,6 +217,11 @@ def get_provider_matches():
     return provider_matches
 
 
+def chunked(items, size):
+    for start_idx in range(0, len(items), size):
+        yield start_idx, items[start_idx:start_idx + size]
+
+
 def build_apps_script_url(action):
     """Append action to the Apps Script URL without breaking existing query params."""
     parsed_url = urllib.parse.urlparse(API_BASE_URL)
@@ -224,6 +230,55 @@ def build_apps_script_url(action):
     query_params.append(("action", action))
     updated_query = urllib.parse.urlencode(query_params)
     return urllib.parse.urlunparse(parsed_url._replace(query=updated_query))
+
+
+def post_match_batch(batch_matches, recalculate_leaderboard):
+    url = build_apps_script_url("adminSyncMatches")
+    payload = {
+        "action": "adminSyncMatches",
+        "apiKey": ADMIN_API_KEY,
+        "matches": batch_matches,
+        "recalculateLeaderboard": recalculate_leaderboard,
+    }
+
+    try:
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "text/plain;charset=utf-8"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=60) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except Exception as e:
+        print("Failed to post updates to Apps Script Web App:", e)
+        print("Tip: lower SYNC_BATCH_SIZE if Apps Script still times out, for example SYNC_BATCH_SIZE=10.")
+        return None
+
+    if result.get("success"):
+        return result
+
+    error = result.get("error")
+    print("Apps Script rejected sync:", error)
+    if error == "Invalid POST action":
+        print("Hint: redeploy the latest backend/api.js to Apps Script so doPost can read action from the JSON body.")
+        print("Hint: verify API_BASE_URL is the Web App /exec URL, not the Apps Script editor or /dev URL.")
+    return None
+
+
+def print_sync_diagnostics(result):
+    if result.get("createdCount"):
+        print("New matches created in the Matches sheet:")
+        for match in result.get("createdMatches", []):
+            print(f"- {match.get('matchId')}: {match.get('homeTeam')} vs {match.get('awayTeam')}")
+    if result.get("unmatchedCount"):
+        print("Unmatched matches returned by Apps Script. Check these provider names against the Matches sheet:")
+        for match in result.get("unmatchedMatches", []):
+            print(f"- {match.get('matchId')}: {match.get('homeTeam')} vs {match.get('awayTeam')}")
+    if result.get("skippedOverriddenCount"):
+        print("Skipped matches with admin overrides:")
+        for match in result.get("skippedOverriddenMatches", []):
+            print(f"- {match.get('matchId')}: {match.get('homeTeam')} vs {match.get('awayTeam')}")
 
 
 def main():
@@ -242,48 +297,37 @@ def main():
     if len(provider_matches) > 10:
         print(f"...and {len(provider_matches) - 10} more provider matches")
 
-    # POST updates to Apps Script API
-    print(f"Submitting {len(provider_matches)} match updates to Apps Script API...")
+    # POST updates to Apps Script API in chunks to avoid Apps Script timeouts.
+    print(f"Submitting {len(provider_matches)} match updates to Apps Script API in batches of {SYNC_BATCH_SIZE}...")
 
-    url = build_apps_script_url("adminSyncMatches")
-    payload = {
-        "action": "adminSyncMatches",
-        "apiKey": ADMIN_API_KEY,
-        "matches": provider_matches,
-    }
+    total_updated = 0
+    total_created = 0
+    total_unmatched = 0
+    total_skipped = 0
+    total_batches = (len(provider_matches) + SYNC_BATCH_SIZE - 1) // SYNC_BATCH_SIZE
 
-    try:
-        request = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "text/plain;charset=utf-8"},
-            method="POST",
-        )
-        with urllib.request.urlopen(request, timeout=20) as response:
-            result = json.loads(response.read().decode("utf-8"))
+    for batch_index, (start_idx, batch_matches) in enumerate(chunked(provider_matches, SYNC_BATCH_SIZE), start=1):
+        is_last_batch = batch_index == total_batches
+        result = post_match_batch(batch_matches, recalculate_leaderboard=is_last_batch)
+        if not result:
+            return
 
-        if result.get("success"):
-            print("Successfully synced matches! Apps Script response:", result.get("message"))
-            if result.get("createdCount"):
-                print("New matches created in the Matches sheet:")
-                for match in result.get("createdMatches", []):
-                    print(f"- {match.get('matchId')}: {match.get('homeTeam')} vs {match.get('awayTeam')}")
-            if result.get("unmatchedCount"):
-                print("Unmatched matches returned by Apps Script. Check these provider names against the Matches sheet:")
-                for match in result.get("unmatchedMatches", []):
-                    print(f"- {match.get('matchId')}: {match.get('homeTeam')} vs {match.get('awayTeam')}")
-            if result.get("skippedOverriddenCount"):
-                print("Skipped matches with admin overrides:")
-                for match in result.get("skippedOverriddenMatches", []):
-                    print(f"- {match.get('matchId')}: {match.get('homeTeam')} vs {match.get('awayTeam')}")
-        else:
-            error = result.get("error")
-            print("Apps Script rejected sync:", error)
-            if error == "Invalid POST action":
-                print("Hint: redeploy the latest backend/api.js to Apps Script so doPost can read action from the JSON body.")
-                print("Hint: verify API_BASE_URL is the Web App /exec URL, not the Apps Script editor or /dev URL.")
-    except Exception as e:
-        print("Failed to post updates to Apps Script Web App:", e)
+        total_updated += int(result.get("updatedCount") or 0)
+        total_created += int(result.get("createdCount") or 0)
+        total_unmatched += int(result.get("unmatchedCount") or 0)
+        total_skipped += int(result.get("skippedOverriddenCount") or 0)
+
+        print(f"Batch {batch_index}/{total_batches} response:", result.get("message"))
+        print_sync_diagnostics(result)
+
+    print(
+        "Sync summary:",
+        f"updated={total_updated},",
+        f"created={total_created},",
+        f"unmatched={total_unmatched},",
+        f"skippedOverridden={total_skipped}",
+    )
+
 
 
 if __name__ == "__main__":

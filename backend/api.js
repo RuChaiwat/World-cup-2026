@@ -455,12 +455,13 @@ function handleAdminSyncMatches(body) {
     updatedCount++;
   });
   
-  // Recalculate leaderboard
-  recalculateLeaderboard(ss);
+  if (body.recalculateLeaderboard !== false) {
+    recalculateLeaderboard(ss);
+  }
   
   return jsonResponse({
     success: true,
-    message: `Synced ${updatedCount} matches and created ${createdCount} new matches. Unmatched: ${unmatchedMatches.length}. Skipped overridden: ${skippedOverriddenMatches.length}.`,
+    message: `Synced ${updatedCount} matches and created ${createdCount} new matches. Unmatched: ${unmatchedMatches.length}. Skipped overridden: ${skippedOverriddenMatches.length}. Leaderboard recalculated: ${body.recalculateLeaderboard !== false}.`,
     updatedCount: updatedCount,
     createdCount: createdCount,
     createdMatches: createdMatches.slice(0, 10),

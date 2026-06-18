@@ -30,5 +30,6 @@ jobs:
           FOOTBALL_API_KEY: ${{ secrets.FOOTBALL_API_KEY }}
           FOOTBALL_API_URL: ${{ vars.FOOTBALL_API_URL || 'https://v3.football.api-sports.io/fixtures' }}
           FOOTBALL_DATA_URL: ${{ vars.FOOTBALL_DATA_URL || 'https://api.football-data.org/v4/competitions/WC/matches' }}
+          SYNC_BATCH_SIZE: ${{ vars.SYNC_BATCH_SIZE || '20' }}
           # MOCK_API: "false"
         run: python scripts/sync_matches.py
