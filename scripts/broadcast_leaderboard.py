@@ -115,7 +115,6 @@ def build_flex_message(top10):
         "header": {
             "type": "box",
             "layout": "vertical",
-            "align": "center",
             "contents": [
                 {
                     "type": "text",
