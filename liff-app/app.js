@@ -1,12 +1,15 @@
 // CONFIGURATION - Put your deployed Google Apps Script Web App URL here
 const API_BASE_URL = "https://script.google.com/macros/s/AKfycbx3Lu1FeP_pY591MF9OJJv61hEVRL_feSPQ_fkOq6r74ePHpKVCtt9vW97pq-avAMKfqA/exec";
-const OPENCHAT_URL = "https://line.me/ti/g2/YOUR_OPENCHAT_CODE"; // Line OpenChat/Group Join Link
+const OPENCHAT_URL = ""; // Line OpenChat/Group Join Link. Leave blank while OpenChat/OA is temporarily disabled.
+const SHOW_OPENCHAT = false; // Set to true when the LINE OpenChat/OA link is ready to show.
 
 let currentUser = null; // { employeeId, fullName, lineUserId }
 let matchesData = [];
+let requestedInitialScreen = new URLSearchParams(window.location.search).get("screen") || "matches";
 
 // Initialize App
 document.addEventListener("DOMContentLoaded", () => {
+  configureOpenChatBanner();
   initLiff();
   setupEventListeners();
 });
@@ -37,6 +40,16 @@ function initLiff() {
       // Fallback for browser testing
       showAuthScreen();
     });
+}
+
+
+function configureOpenChatBanner() {
+  const openChatButton = document.getElementById("btn-open-chat");
+  if (!openChatButton) return;
+
+  const shouldShowOpenChat = SHOW_OPENCHAT && Boolean(OPENCHAT_URL);
+  openChatButton.style.display = shouldShowOpenChat ? "flex" : "none";
+  openChatButton.setAttribute("aria-hidden", String(!shouldShowOpenChat));
 }
 
 // Check if LINE User ID is already linked
@@ -75,13 +88,16 @@ function setupEventListeners() {
   });
 
   // OpenChat Link Click Handler
-  document.getElementById("btn-open-chat").addEventListener("click", () => {
-    if (liff.isInClient()) {
-      liff.openWindow({ url: OPENCHAT_URL, external: true });
-    } else {
-      window.open(OPENCHAT_URL, "_blank");
-    }
-  });
+  const openChatButton = document.getElementById("btn-open-chat");
+  if (openChatButton && SHOW_OPENCHAT && OPENCHAT_URL) {
+    openChatButton.addEventListener("click", () => {
+      if (liff.isInClient()) {
+        liff.openWindow({ url: OPENCHAT_URL, external: true });
+      } else {
+        window.open(OPENCHAT_URL, "_blank");
+      }
+    });
+  }
 
   // Submit Winner Prediction Button
   document.getElementById("btn-submit-winner").addEventListener("click", handleSubmitWinner);
@@ -164,8 +180,9 @@ function loginUser(employeeId, fullName, lineUserId) {
   document.getElementById("app-header").style.display = "flex";
   document.getElementById("bottom-nav").style.display = "grid";
 
-  // Transition to main matches tab
-  switchScreen("matches");
+  // Transition to requested tab from LIFF/Rich Menu, defaulting to matches.
+  const allowedScreens = ["matches", "winner", "history", "leaderboard"];
+  switchScreen(allowedScreens.includes(requestedInitialScreen) ? requestedInitialScreen : "matches");
 }
 
 // 3. Screen Navigation
@@ -197,6 +214,8 @@ function switchScreen(screenId) {
     loadMatches();
   } else if (screenId === "winner") {
     loadWinnerScreen();
+  } else if (screenId === "history") {
+    loadHistoryScreen();
   } else if (screenId === "leaderboard") {
     loadLeaderboard();
   }
@@ -222,7 +241,7 @@ function loadMatches() {
   const container = document.getElementById("match-list-container");
   container.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">กำลังโหลดแมตช์การแข่งขัน...</p>`;
 
-  fetch(`${API_BASE_URL}?action=getMatches&employeeId=${currentUser.employeeId}`)
+  fetch(`${API_BASE_URL}?action=getMatches&employeeId=${currentUser.employeeId}&mode=prediction`)
     .then(res => res.json())
     .then(data => {
       matchesData = data.matches;
@@ -237,7 +256,7 @@ function loadMatches() {
 function renderMatches(matches) {
   const container = document.getElementById("match-list-container");
   if (matches.length === 0) {
-    container.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">ไม่มีรายการแข่งขันในขณะนี้</p>`;
+    container.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">ไม่มีรายการที่เปิดให้ทายผลในช่วง 3 วันก่อนแข่งขัน</p>`;
     return;
   }
 
@@ -343,7 +362,7 @@ function renderMatches(matches) {
         ${knockoutSelectionHtml}
         ${actualScoreHtml}
         
-        <button class="card-action submit-pred-btn" data-id="${m.matchId}" ${m.isLocked ? 'disabled' : ''}>
+        <button class="card-action submit-pred-btn" data-id="${m.matchId}" ${!m.isPredictionOpen ? 'disabled' : ''}>
           ${pred.timestamp ? 'แก้ไขคำทายผล' : 'ส่งคำทายผล'}
         </button>
       `;
@@ -419,7 +438,76 @@ function submitPrediction(matchId, homeScore, awayScore, qualifiedTeam) {
     });
 }
 
-// 5. Champion Prediction Screen
+
+// 5. Match History Screen
+function loadHistoryScreen() {
+  const dateInput = document.getElementById("history-date-input");
+  if (!dateInput.value) {
+    dateInput.value = getBangkokDateInputValue(new Date());
+    dateInput.addEventListener("change", () => loadHistoryMatches(dateInput.value));
+  }
+  loadHistoryMatches(dateInput.value);
+}
+
+function loadHistoryMatches(dateValue) {
+  const container = document.getElementById("history-list-container");
+  container.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">กำลังโหลดผลการแข่งขัน...</p>`;
+
+  fetch(`${API_BASE_URL}?action=getMatches&employeeId=${currentUser.employeeId}&mode=history&date=${dateValue}`)
+    .then(res => res.json())
+    .then(data => renderHistoryMatches(data.matches || []))
+    .catch(err => {
+      showToast("โหลดผลย้อนหลังล้มเหลว", "error");
+      container.innerHTML = `<p style="text-align: center; color: var(--accent-red);">เกิดข้อผิดพลาดในการโหลดผลย้อนหลัง</p>`;
+      console.error(err);
+    });
+}
+
+function renderHistoryMatches(matches) {
+  const container = document.getElementById("history-list-container");
+  if (matches.length === 0) {
+    container.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">ไม่มีการแข่งขันในวันที่เลือก</p>`;
+    return;
+  }
+
+  container.innerHTML = "";
+  matches.forEach(m => {
+    const timeStr = new Date(m.kickoffTime).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+    const actualHome = m.actual.homeScore !== null && m.actual.homeScore !== "" ? m.actual.homeScore : "-";
+    const actualAway = m.actual.awayScore !== null && m.actual.awayScore !== "" ? m.actual.awayScore : "-";
+    const pred = m.prediction;
+    const card = document.createElement("div");
+    card.className = "match-card glass-panel locked";
+    card.innerHTML = `
+      <div class="match-meta">
+        <span class="stage-badge">${m.stage}</span>
+        <span>เวลา ${timeStr} น.</span>
+        <span class="lock-badge closed">${m.status || "Scheduled"}</span>
+      </div>
+      <div class="match-body">
+        <div class="team-container"><img class="flag-icon" src="https://flagcdn.com/w80/${getTeamCode(m.homeTeam)}.png" onerror="this.src='https://flagcdn.com/w80/un.png'" alt="${m.homeTeam}"><div class="team-name">${m.homeTeam}</div></div>
+        <div class="vs-divider"><span class="vs-text">ผลการแข่งขัน</span><div class="score-display">${actualHome} - ${actualAway}</div></div>
+        <div class="team-container"><img class="flag-icon" src="https://flagcdn.com/w80/${getTeamCode(m.awayTeam)}.png" onerror="this.src='https://flagcdn.com/w80/un.png'" alt="${m.awayTeam}"><div class="team-name">${m.awayTeam}</div></div>
+      </div>
+      ${m.actual.qualifiedTeam ? `<div style="text-align:center; font-size:12px; color: var(--primary);">${m.actual.qualifiedTeam} เข้ารอบ</div>` : ""}
+      ${pred ? `<div style="text-align:center; font-size:12px; color: var(--text-secondary); margin-top:8px;">คำทายของคุณ: ${pred.homeScore} - ${pred.awayScore}</div>` : ""}
+    `;
+    container.appendChild(card);
+  });
+}
+
+function getBangkokDateInputValue(date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+// 6. Champion Prediction Screen
 function loadWinnerScreen() {
   fetch(`${API_BASE_URL}?action=getMatches&employeeId=${currentUser.employeeId}`)
     .then(res => res.json())
@@ -480,15 +568,15 @@ function handleSubmitWinner() {
     });
 }
 
-// 6. Leaderboard Tab Operations
+// 7. Leaderboard Tab Operations
 function loadLeaderboard() {
   const container = document.getElementById("leaderboard-container");
   container.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">กำลังโหลดตารางคะแนน...</p>`;
 
-  fetch(`${API_BASE_URL}?action=getLeaderboard`)
+  fetch(`${API_BASE_URL}?action=getLeaderboard&employeeId=${currentUser.employeeId}`)
     .then(res => res.json())
     .then(data => {
-      renderLeaderboard(data.leaderboard);
+      renderLeaderboard(data.leaderboard, data.currentUser);
     })
     .catch(err => {
       showToast("โหลดตารางคะแนนล้มเหลว", "error");
@@ -496,7 +584,7 @@ function loadLeaderboard() {
     });
 }
 
-function renderLeaderboard(board) {
+function renderLeaderboard(board, currentUserRow = null) {
   const container = document.getElementById("leaderboard-container");
   if (board.length === 0) {
     container.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">ยังไม่มีคะแนนการแข่งขันในขณะนี้</p>`;
@@ -505,7 +593,8 @@ function renderLeaderboard(board) {
 
   container.innerHTML = "";
 
-  board.forEach((user, index) => {
+  const rowsToRender = currentUserRow ? [...board, currentUserRow] : board;
+  rowsToRender.forEach((user, index) => {
     const isMe = String(user.Employee_ID) === String(currentUser.employeeId);
     const row = document.createElement("div");
 
