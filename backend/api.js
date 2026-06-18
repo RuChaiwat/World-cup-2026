@@ -163,6 +163,8 @@ function handleLogin(body) {
  */
 function handleGetMatches(e) {
   const employeeId = e.parameter.employeeId;
+  const mode = e.parameter.mode || "all";
+  const dateFilter = e.parameter.date || "";
   if (!employeeId) {
     return jsonResponse({ error: "employeeId parameter is required" }, 400);
   }
@@ -193,32 +195,10 @@ function handleGetMatches(e) {
     .sort((a, b) => new Date(a.Timestamp) - new Date(b.Timestamp))
     .pop();
   
-  const matchesResult = matches.map(m => {
-    const pred = userPredicts[m.Match_ID] || null;
-    const kickoff = new Date(m.Kickoff_Time);
-    const now = new Date();
-    const isLocked = now >= kickoff;
-    
-    const homeScoreActual = m.Override_Home_Score !== "" && m.Override_Home_Score !== null && m.Override_Home_Score !== undefined ? m.Override_Home_Score : m.Home_Score_Actual;
-    const awayScoreActual = m.Override_Away_Score !== "" && m.Override_Away_Score !== null && m.Override_Away_Score !== undefined ? m.Override_Away_Score : m.Away_Score_Actual;
-    const qualifiedTeamActual = m.Override_Qualified_Team !== "" && m.Override_Qualified_Team !== null && m.Override_Qualified_Team !== undefined ? m.Override_Qualified_Team : m.Qualified_Team_Actual;
-    
-    return {
-      matchId: m.Match_ID,
-      homeTeam: m.Home_Team,
-      awayTeam: m.Away_Team,
-      kickoffTime: m.Kickoff_Time,
-      stage: m.Stage,
-      status: m.Status,
-      isLocked: isLocked,
-      actual: {
-        homeScore: homeScoreActual,
-        awayScore: awayScoreActual,
-        qualifiedTeam: qualifiedTeamActual
-      },
-      prediction: pred
-    };
-  });
+  const now = new Date();
+  const matchesResult = matches
+    .map(m => buildMatchResponse(m, userPredicts[m.Match_ID] || null, now))
+    .filter(m => shouldIncludeMatchForMode(m, mode, dateFilter));
   
   const firstSemifinal = matches.find(m => String(m.Stage).toLowerCase() === "semifinals");
   const winnerLockTime = firstSemifinal ? new Date(firstSemifinal.Kickoff_Time) : null;
@@ -234,6 +214,48 @@ function handleGetMatches(e) {
 /**
  * Submit Match Prediction
  */
+function buildMatchResponse(m, pred, now) {
+  const kickoff = new Date(m.Kickoff_Time);
+  const predictionOpenAt = new Date(kickoff.getTime() - (3 * 24 * 60 * 60 * 1000));
+  const isPredictionOpen = now >= predictionOpenAt && now < kickoff;
+  const isLocked = now >= kickoff;
+  const homeScoreActual = m.Override_Home_Score !== "" && m.Override_Home_Score !== null && m.Override_Home_Score !== undefined ? m.Override_Home_Score : m.Home_Score_Actual;
+  const awayScoreActual = m.Override_Away_Score !== "" && m.Override_Away_Score !== null && m.Override_Away_Score !== undefined ? m.Override_Away_Score : m.Away_Score_Actual;
+  const qualifiedTeamActual = m.Override_Qualified_Team !== "" && m.Override_Qualified_Team !== null && m.Override_Qualified_Team !== undefined ? m.Override_Qualified_Team : m.Qualified_Team_Actual;
+
+  return {
+    matchId: m.Match_ID,
+    homeTeam: m.Home_Team,
+    awayTeam: m.Away_Team,
+    kickoffTime: m.Kickoff_Time,
+    stage: m.Stage,
+    status: m.Status,
+    isLocked: isLocked,
+    isPredictionOpen: isPredictionOpen,
+    predictionOpenAt: predictionOpenAt.toISOString(),
+    actual: {
+      homeScore: homeScoreActual,
+      awayScore: awayScoreActual,
+      qualifiedTeam: qualifiedTeamActual
+    },
+    prediction: pred
+  };
+}
+
+function shouldIncludeMatchForMode(match, mode, dateFilter) {
+  if (mode === "prediction") {
+    return match.isPredictionOpen;
+  }
+  if (mode === "history") {
+    return dateFilter && getBangkokDateKey(new Date(match.kickoffTime)) === dateFilter;
+  }
+  return true;
+}
+
+function getBangkokDateKey(date) {
+  return Utilities.formatDate(date, "Asia/Bangkok", "yyyy-MM-dd");
+}
+
 function handleSubmitPrediction(body) {
   const { employeeId, matchId, homeScore, awayScore, qualifiedTeam } = body;
   if (!employeeId || !matchId || homeScore === undefined || awayScore === undefined) {
@@ -250,7 +272,12 @@ function handleSubmitPrediction(body) {
   }
   
   const kickoff = new Date(match.Kickoff_Time);
-  if (new Date() >= kickoff) {
+  const now = new Date();
+  const predictionOpenAt = new Date(kickoff.getTime() - (3 * 24 * 60 * 60 * 1000));
+  if (now < predictionOpenAt) {
+    return jsonResponse({ error: "Prediction has not opened yet. You can predict within 3 days before kickoff." }, 400);
+  }
+  if (now >= kickoff) {
     return jsonResponse({ error: "Prediction closed: Match has already kicked off!" }, 400);
   }
   
@@ -303,12 +330,20 @@ function handleSubmitWinnerPrediction(body) {
  * Get Leaderboard Cache
  */
 function handleGetLeaderboard(e) {
+  const employeeId = e.parameter.employeeId || "";
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const boardSheet = ss.getSheetByName("Leaderboard");
   const data = getSheetData(boardSheet);
   
   const sortedBoard = data.sort((a, b) => Number(a.Rank) - Number(b.Rank));
-  return jsonResponse({ leaderboard: sortedBoard });
+  const topBoard = sortedBoard.slice(0, 10);
+  const currentUserRow = employeeId ? sortedBoard.find(row => String(row.Employee_ID) === String(employeeId)) : null;
+  const isCurrentUserInTop = currentUserRow ? topBoard.some(row => String(row.Employee_ID) === String(employeeId)) : false;
+
+  return jsonResponse({
+    leaderboard: topBoard,
+    currentUser: isCurrentUserInTop ? null : currentUserRow
+  });
 }
 
 // ==========================================
