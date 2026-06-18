@@ -20,13 +20,16 @@ function initLiff() {
   liff.init({ liffId: "2010392073-d04GAnnm" })
     .then(() => {
       if (liff.isLoggedIn()) {
-        liff.getProfile()
-          .then(profile => {
-            const lineUserId = profile.userId;
-            checkAutoLogin(lineUserId);
+        resolveLineUserId()
+          .then(lineUserId => {
+            if (lineUserId) {
+              checkAutoLogin(lineUserId);
+            } else {
+              showAuthScreen();
+            }
           })
           .catch(err => {
-            showToast("Failed to retrieve LINE Profile: " + err, "error");
+            console.warn("Failed to resolve LINE User ID:", err);
             showAuthScreen();
           });
       } else {
@@ -39,6 +42,20 @@ function initLiff() {
       console.error("LIFF Initialization failed", err);
       // Fallback for browser testing
       showAuthScreen();
+    });
+}
+
+function resolveLineUserId() {
+  const context = liff.getContext ? liff.getContext() : null;
+  if (context && context.userId) {
+    return Promise.resolve(context.userId);
+  }
+
+  return liff.getProfile()
+    .then(profile => profile.userId)
+    .catch(err => {
+      console.warn("LIFF profile scope is unavailable; continuing without profile permission.", err);
+      return null;
     });
 }
 
