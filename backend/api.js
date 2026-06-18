@@ -482,6 +482,31 @@ function normalizeTeamName(teamName) {
     .replace(/\s+/g, " ");
 }
 
+
+function findMatchIndexForSync(sheetRows, incomingMatch) {
+  const incomingMatchId = String(incomingMatch.matchId || "").trim();
+  if (incomingMatchId) {
+    const idMatchIdx = sheetRows.findIndex(row => String(row.Match_ID).trim() === incomingMatchId);
+    if (idMatchIdx !== -1) return idMatchIdx;
+  }
+
+  const incomingHome = normalizeTeamName(incomingMatch.homeTeam);
+  const incomingAway = normalizeTeamName(incomingMatch.awayTeam);
+  if (!incomingHome || !incomingAway) return -1;
+
+  return sheetRows.findIndex(row =>
+    normalizeTeamName(row.Home_Team) === incomingHome &&
+    normalizeTeamName(row.Away_Team) === incomingAway
+  );
+}
+
+function normalizeTeamName(teamName) {
+  return String(teamName || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
 // ==========================================
 // SCORING ENGINE AND LEADERBOARD GENERATOR
 // ==========================================
