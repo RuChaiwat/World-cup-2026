@@ -92,8 +92,10 @@ def get_fixtures_from_football_data():
 
 def parse_api_sports_fixture(f):
     status_api = f["fixture"]["status"]["short"]
-    home_team = f["teams"]["home"]["name"]
-    away_team = f["teams"]["away"]["name"]
+    home_team = (f["teams"].get("home") or {}).get("name") or ""
+    away_team = (f["teams"].get("away") or {}).get("name") or ""
+    if not home_team or not away_team:
+        return None
     goals_home = f["goals"].get("home")
     goals_away = f["goals"].get("away")
     match_status = map_api_sports_status(status_api)
@@ -129,8 +131,10 @@ def map_api_sports_status(status_api):
 
 
 def parse_football_data_match(match):
-    home_team = match["homeTeam"]["name"]
-    away_team = match["awayTeam"]["name"]
+    home_team = (match.get("homeTeam") or {}).get("name") or ""
+    away_team = (match.get("awayTeam") or {}).get("name") or ""
+    if not home_team or not away_team:
+        return None
     full_time_score = match.get("score", {}).get("fullTime", {})
     goals_home = full_time_score.get("home")
     goals_away = full_time_score.get("away")
@@ -209,10 +213,16 @@ def get_provider_matches():
         return []
 
     provider_matches = []
+    skipped_tbd_count = 0
     for match in api_matches:
         parsed = parser(match)
         if parsed:
             provider_matches.append(parsed)
+        else:
+            skipped_tbd_count += 1
+
+    if skipped_tbd_count:
+        print(f"Skipped {skipped_tbd_count} provider matches because teams are not decided yet.")
 
     return provider_matches
 
@@ -327,7 +337,6 @@ def main():
         f"unmatched={total_unmatched},",
         f"skippedOverridden={total_skipped}",
     )
-
 
 
 if __name__ == "__main__":
