@@ -1,5 +1,5 @@
 // CONFIGURATION - Put your deployed Google Apps Script Web App URL here
-const API_BASE_URL = "https://script.google.com/macros/s/AKfycbx3Lu1FeP_pY591MF9OJJv61hEVRL_feSPQ_fkOq6r74ePHpKVCtt9vW97pq-avAMKfqA/exec";
+const API_BASE_URL = "https://script.google.com/macros/s/AKfycbxAkHjgKVIcb33jc3HOXHTmCTJD8nhTnZnMR7Tf-rYvS2qiYOcLqGTg0hGHOmxk9ggoVQ/exec";
 const OPENCHAT_URL = ""; // Line OpenChat/Group Join Link. Leave blank while OpenChat/OA is temporarily disabled.
 const SHOW_OPENCHAT = false; // Set to true when the LINE OpenChat/OA link is ready to show.
 
