@@ -29,7 +29,6 @@ function doGet(e) {
  * Handle HTTP POST Requests
  */
 function doPost(e) {
-  const action = e.parameter.action;
   let body = {};
   
   if (e.postData && e.postData.contents) {
@@ -39,6 +38,8 @@ function doPost(e) {
       return jsonResponse({ error: "Malformed JSON body" }, 400);
     }
   }
+
+  const action = e.parameter.action || body.action;
   
   try {
     switch (action) {
@@ -405,31 +406,80 @@ function handleAdminSyncMatches(body) {
   const data = getSheetData(matchSheet);
   
   let updatedCount = 0;
+  const unmatchedMatches = [];
+  const skippedOverriddenMatches = [];
   
   matches.forEach(m => {
-    const matchIdx = data.findIndex(row => String(row.Match_ID) === String(m.matchId));
-    if (matchIdx !== -1) {
-      const row = data[matchIdx];
-      
-      // Skip if overridden
-      const isOverridden = (row.Override_Home_Score !== "" && row.Override_Home_Score !== null && row.Override_Home_Score !== undefined);
-      if (!isOverridden) {
-        const rowNum = matchIdx + 2;
-        updateCellByHeader(matchSheet, rowNum, "Home_Score_Actual", m.homeScore === null || m.homeScore === "" ? "" : Number(m.homeScore));
-        updateCellByHeader(matchSheet, rowNum, "Away_Score_Actual", m.awayScore === null || m.awayScore === "" ? "" : Number(m.awayScore));
-        updateCellByHeader(matchSheet, rowNum, "Status", m.status || "Finished");
-        if (m.qualifiedTeam) {
-          updateCellByHeader(matchSheet, rowNum, "Qualified_Team_Actual", m.qualifiedTeam);
-        }
-        updatedCount++;
-      }
+    const matchIdx = findMatchIndexForSync(data, m);
+    if (matchIdx === -1) {
+      unmatchedMatches.push({
+        matchId: m.matchId || "",
+        homeTeam: m.homeTeam || "",
+        awayTeam: m.awayTeam || ""
+      });
+      return;
     }
+
+    const row = data[matchIdx];
+    
+    // Skip if overridden
+    const isOverridden = (row.Override_Home_Score !== "" && row.Override_Home_Score !== null && row.Override_Home_Score !== undefined);
+    if (isOverridden) {
+      skippedOverriddenMatches.push({
+        matchId: row.Match_ID || m.matchId || "",
+        homeTeam: row.Home_Team || m.homeTeam || "",
+        awayTeam: row.Away_Team || m.awayTeam || ""
+      });
+      return;
+    }
+
+    const rowNum = matchIdx + 2;
+    updateCellByHeader(matchSheet, rowNum, "Home_Score_Actual", m.homeScore === null || m.homeScore === "" ? "" : Number(m.homeScore));
+    updateCellByHeader(matchSheet, rowNum, "Away_Score_Actual", m.awayScore === null || m.awayScore === "" ? "" : Number(m.awayScore));
+    updateCellByHeader(matchSheet, rowNum, "Status", m.status || "Finished");
+    if (m.qualifiedTeam) {
+      updateCellByHeader(matchSheet, rowNum, "Qualified_Team_Actual", m.qualifiedTeam);
+    }
+    updatedCount++;
   });
   
   // Recalculate leaderboard
   recalculateLeaderboard(ss);
   
-  return jsonResponse({ success: true, message: `Synced ${updatedCount} matches and updated leaderboard.` });
+  return jsonResponse({
+    success: true,
+    message: `Synced ${updatedCount} matches and updated leaderboard. Unmatched: ${unmatchedMatches.length}. Skipped overridden: ${skippedOverriddenMatches.length}.`,
+    updatedCount: updatedCount,
+    unmatchedCount: unmatchedMatches.length,
+    unmatchedMatches: unmatchedMatches.slice(0, 10),
+    skippedOverriddenCount: skippedOverriddenMatches.length,
+    skippedOverriddenMatches: skippedOverriddenMatches.slice(0, 10)
+  });
+}
+
+
+function findMatchIndexForSync(sheetRows, incomingMatch) {
+  const incomingMatchId = String(incomingMatch.matchId || "").trim();
+  if (incomingMatchId) {
+    const idMatchIdx = sheetRows.findIndex(row => String(row.Match_ID).trim() === incomingMatchId);
+    if (idMatchIdx !== -1) return idMatchIdx;
+  }
+
+  const incomingHome = normalizeTeamName(incomingMatch.homeTeam);
+  const incomingAway = normalizeTeamName(incomingMatch.awayTeam);
+  if (!incomingHome || !incomingAway) return -1;
+
+  return sheetRows.findIndex(row =>
+    normalizeTeamName(row.Home_Team) === incomingHome &&
+    normalizeTeamName(row.Away_Team) === incomingAway
+  );
+}
+
+function normalizeTeamName(teamName) {
+  return String(teamName || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
 }
 
 // ==========================================
