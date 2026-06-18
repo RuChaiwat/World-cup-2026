@@ -276,14 +276,20 @@ function loadMatches() {
 }
 
 function filterPredictionMatches(matches) {
+  return (matches || []).filter(isMatchPredictionOpen);
+}
+
+function isMatchPredictionOpen(match) {
+  if (!match) return false;
+  if (match.isPredictionOpen === true) return true;
+  if (match.isPredictionOpen === false) return false;
+
+  const kickoff = new Date(match.kickoffTime);
+  if (isNaN(kickoff.getTime())) return false;
+
   const now = new Date();
-  return (matches || []).filter(match => {
-    if (match.isPredictionOpen === true) return true;
-    const kickoff = new Date(match.kickoffTime);
-    if (isNaN(kickoff.getTime())) return false;
-    const predictionOpenAt = new Date(kickoff.getTime() - (3 * 24 * 60 * 60 * 1000));
-    return now >= predictionOpenAt && now < kickoff;
-  });
+  const predictionOpenAt = new Date(kickoff.getTime() - (3 * 24 * 60 * 60 * 1000));
+  return now >= predictionOpenAt && now < kickoff;
 }
 
 function renderMatches(matches) {
@@ -323,9 +329,11 @@ function renderMatches(matches) {
 
       // Handle scores and status badges
       const pred = m.prediction || { homeScore: "", awayScore: "", qualifiedTeam: "" };
-      const lockBadgeHtml = m.isLocked
-        ? `<span class="lock-badge closed">🔒 ปิดรับทายผล</span>`
-        : `<span class="lock-badge open">🔓 เปิดรับทายผล</span>`;
+      const isPredictionOpen = isMatchPredictionOpen(m);
+      const isMatchLocked = m.isLocked === true || !isPredictionOpen;
+      const lockBadgeHtml = isPredictionOpen
+        ? `<span class="lock-badge open">🔓 เปิดรับทายผล</span>`
+        : `<span class="lock-badge closed">🔒 ปิดรับทายผล</span>`;
 
       // Knockout stage team qualifier picker
       const isKnockout = m.stage && String(m.stage).toLowerCase() !== "group";
@@ -335,7 +343,7 @@ function renderMatches(matches) {
         knockoutSelectionHtml = `
           <div class="form-group" style="margin-top: 8px;">
             <label class="form-label" style="font-size: 11px;">ทีมที่จะผ่านเข้ารอบ (Knockout Stage Bonus)</label>
-            <select class="champ-select qual-picker" id="qualify-${m.matchId}" ${m.isLocked ? 'disabled' : ''} style="padding: 8px; font-size: 13px;">
+            <select class="champ-select qual-picker" id="qualify-${m.matchId}" ${isMatchLocked ? 'disabled' : ''} style="padding: 8px; font-size: 13px;">
               <option value="">-- เลือกทีมเข้ารอบ --</option>
               <option value="${m.homeTeam}" ${selectedTeam === m.homeTeam ? 'selected' : ''}>${m.homeTeam}</option>
               <option value="${m.awayTeam}" ${selectedTeam === m.awayTeam ? 'selected' : ''}>${m.awayTeam}</option>
@@ -373,15 +381,15 @@ function renderMatches(matches) {
           <!-- VS & Score Entry -->
           <div class="vs-divider">
             <div class="predict-controls">
-              <button class="predict-btn dec" ${m.isLocked ? 'disabled' : ''}>-</button>
+              <button class="predict-btn dec" ${isMatchLocked ? 'disabled' : ''}>-</button>
               <input type="text" class="predict-input home-score-val" value="${pred.homeScore}" readonly id="score-home-${m.matchId}">
-              <button class="predict-btn inc" ${m.isLocked ? 'disabled' : ''}>+</button>
+              <button class="predict-btn inc" ${isMatchLocked ? 'disabled' : ''}>+</button>
             </div>
             <span class="vs-text">VS</span>
             <div class="predict-controls">
-              <button class="predict-btn dec" ${m.isLocked ? 'disabled' : ''}>-</button>
+              <button class="predict-btn dec" ${isMatchLocked ? 'disabled' : ''}>-</button>
               <input type="text" class="predict-input away-score-val" value="${pred.awayScore}" readonly id="score-away-${m.matchId}">
-              <button class="predict-btn inc" ${m.isLocked ? 'disabled' : ''}>+</button>
+              <button class="predict-btn inc" ${isMatchLocked ? 'disabled' : ''}>+</button>
             </div>
           </div>
           
@@ -395,7 +403,7 @@ function renderMatches(matches) {
         ${knockoutSelectionHtml}
         ${actualScoreHtml}
         
-        <button class="card-action submit-pred-btn" data-id="${m.matchId}" ${!m.isPredictionOpen ? 'disabled' : ''}>
+        <button class="card-action submit-pred-btn" data-id="${m.matchId}" ${!isPredictionOpen ? 'disabled' : ''}>
           ${pred.timestamp ? 'แก้ไขคำทายผล' : 'ส่งคำทายผล'}
         </button>
       `;
@@ -434,6 +442,11 @@ function renderMatches(matches) {
           return;
         }
 
+        if (!isPredictionOpen) {
+          showToast("ปิดรับทายผลสำหรับแมตช์นี้แล้ว", "error");
+          return;
+        }
+
         submitPrediction(matchId, homeVal, awayVal, qualVal);
       });
 
@@ -448,6 +461,7 @@ function submitPrediction(matchId, homeScore, awayScore, qualifiedTeam) {
 
   fetch(`${API_BASE_URL}?action=submitPrediction`, {
     method: "POST",
+    headers: { "Content-Type": "text/plain" },
     body: JSON.stringify({
       employeeId: currentUser.employeeId,
       matchId,
