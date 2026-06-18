@@ -406,17 +406,29 @@ function handleAdminSyncMatches(body) {
   const data = getSheetData(matchSheet);
   
   let updatedCount = 0;
+  let createdCount = 0;
+  const createdMatches = [];
   const unmatchedMatches = [];
   const skippedOverriddenMatches = [];
   
   matches.forEach(m => {
     const matchIdx = findMatchIndexForSync(data, m);
     if (matchIdx === -1) {
-      unmatchedMatches.push({
-        matchId: m.matchId || "",
-        homeTeam: m.homeTeam || "",
-        awayTeam: m.awayTeam || ""
-      });
+      if (m.matchId && m.homeTeam && m.awayTeam) {
+        appendRowToObjectSheet(matchSheet, buildMatchRowForSync(m));
+        createdMatches.push({
+          matchId: m.matchId || "",
+          homeTeam: m.homeTeam || "",
+          awayTeam: m.awayTeam || ""
+        });
+        createdCount++;
+      } else {
+        unmatchedMatches.push({
+          matchId: m.matchId || "",
+          homeTeam: m.homeTeam || "",
+          awayTeam: m.awayTeam || ""
+        });
+      }
       return;
     }
 
@@ -448,8 +460,10 @@ function handleAdminSyncMatches(body) {
   
   return jsonResponse({
     success: true,
-    message: `Synced ${updatedCount} matches and updated leaderboard. Unmatched: ${unmatchedMatches.length}. Skipped overridden: ${skippedOverriddenMatches.length}.`,
+    message: `Synced ${updatedCount} matches and created ${createdCount} new matches. Unmatched: ${unmatchedMatches.length}. Skipped overridden: ${skippedOverriddenMatches.length}.`,
     updatedCount: updatedCount,
+    createdCount: createdCount,
+    createdMatches: createdMatches.slice(0, 10),
     unmatchedCount: unmatchedMatches.length,
     unmatchedMatches: unmatchedMatches.slice(0, 10),
     skippedOverriddenCount: skippedOverriddenMatches.length,
@@ -458,30 +472,25 @@ function handleAdminSyncMatches(body) {
 }
 
 
-function findMatchIndexForSync(sheetRows, incomingMatch) {
-  const incomingMatchId = String(incomingMatch.matchId || "").trim();
-  if (incomingMatchId) {
-    const idMatchIdx = sheetRows.findIndex(row => String(row.Match_ID).trim() === incomingMatchId);
-    if (idMatchIdx !== -1) return idMatchIdx;
-  }
+function buildMatchRowForSync(incomingMatch) {
+  const homeScore = incomingMatch.homeScore === null || incomingMatch.homeScore === undefined || incomingMatch.homeScore === "" ? "" : Number(incomingMatch.homeScore);
+  const awayScore = incomingMatch.awayScore === null || incomingMatch.awayScore === undefined || incomingMatch.awayScore === "" ? "" : Number(incomingMatch.awayScore);
 
-  const incomingHome = normalizeTeamName(incomingMatch.homeTeam);
-  const incomingAway = normalizeTeamName(incomingMatch.awayTeam);
-  if (!incomingHome || !incomingAway) return -1;
-
-  return sheetRows.findIndex(row =>
-    normalizeTeamName(row.Home_Team) === incomingHome &&
-    normalizeTeamName(row.Away_Team) === incomingAway
-  );
+  return {
+    Match_ID: String(incomingMatch.matchId),
+    Home_Team: incomingMatch.homeTeam || "",
+    Away_Team: incomingMatch.awayTeam || "",
+    Kickoff_Time: incomingMatch.kickoffTime || "",
+    Stage: incomingMatch.stage || "",
+    Home_Score_Actual: homeScore,
+    Away_Score_Actual: awayScore,
+    Qualified_Team_Actual: incomingMatch.qualifiedTeam || "",
+    Override_Home_Score: "",
+    Override_Away_Score: "",
+    Override_Qualified_Team: "",
+    Status: incomingMatch.status || "Scheduled"
+  };
 }
-
-function normalizeTeamName(teamName) {
-  return String(teamName || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
-}
-
 
 function findMatchIndexForSync(sheetRows, incomingMatch) {
   const incomingMatchId = String(incomingMatch.matchId || "").trim();

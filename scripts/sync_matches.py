@@ -91,46 +91,49 @@ def get_fixtures_from_football_data():
 
 def parse_api_sports_fixture(f):
     status_api = f["fixture"]["status"]["short"]
-    if status_api not in ["FT", "AET", "PEN"]:
-        return None
-
     home_team = f["teams"]["home"]["name"]
     away_team = f["teams"]["away"]["name"]
-    goals_home = f["goals"]["home"]
-    goals_away = f["goals"]["away"]
+    goals_home = f["goals"].get("home")
+    goals_away = f["goals"].get("away")
+    match_status = map_api_sports_status(status_api)
 
     qualified_team = ""
     if status_api == "PEN":
         penalty_winner = f["teams"]["home"].get("winner")
         qualified_team = home_team if penalty_winner else away_team
-    elif goals_home > goals_away:
+    elif goals_home is not None and goals_away is not None and goals_home > goals_away:
         qualified_team = home_team
-    elif goals_away > goals_home:
+    elif goals_home is not None and goals_away is not None and goals_away > goals_home:
         qualified_team = away_team
 
     return {
-        "matchId": f["fixture"]["id"],  # In production, map this to your sheet Match_ID
+        "matchId": f["fixture"]["id"],
         "homeTeam": home_team,
         "awayTeam": away_team,
+        "kickoffTime": f["fixture"].get("date", ""),
+        "stage": f.get("league", {}).get("round", ""),
         "homeScore": goals_home,
         "awayScore": goals_away,
-        "status": "Finished",
+        "status": match_status,
         "qualifiedTeam": qualified_team,
     }
 
 
-def parse_football_data_match(match):
-    if match.get("status") != "FINISHED":
-        return None
+def map_api_sports_status(status_api):
+    if status_api in ["FT", "AET", "PEN"]:
+        return "Finished"
+    if status_api in ["1H", "HT", "2H", "ET", "BT", "P", "LIVE", "INT"]:
+        return "Live"
+    return "Scheduled"
 
+
+def parse_football_data_match(match):
     home_team = match["homeTeam"]["name"]
     away_team = match["awayTeam"]["name"]
     full_time_score = match.get("score", {}).get("fullTime", {})
     goals_home = full_time_score.get("home")
     goals_away = full_time_score.get("away")
-
-    if goals_home is None or goals_away is None:
-        return None
+    match_status = map_football_data_status(match.get("status"))
 
     winner = match.get("score", {}).get("winner")
     qualified_team = ""
@@ -140,14 +143,28 @@ def parse_football_data_match(match):
         qualified_team = away_team
 
     return {
-        "matchId": match["id"],  # In production, map this to your sheet Match_ID
+        "matchId": match["id"],
         "homeTeam": home_team,
         "awayTeam": away_team,
+        "kickoffTime": match.get("utcDate", ""),
+        "stage": normalize_stage_name(match.get("stage", "")),
         "homeScore": goals_home,
         "awayScore": goals_away,
-        "status": "Finished",
+        "status": match_status,
         "qualifiedTeam": qualified_team,
     }
+
+
+def map_football_data_status(status):
+    if status == "FINISHED":
+        return "Finished"
+    if status in ["IN_PLAY", "PAUSED"]:
+        return "Live"
+    return "Scheduled"
+
+
+def normalize_stage_name(stage):
+    return str(stage or "").replace("_", " ").title()
 
 
 def get_mock_fixtures():
@@ -175,7 +192,7 @@ def get_mock_fixtures():
     ]
 
 
-def get_finished_matches():
+def get_provider_matches():
     if os.environ.get("MOCK_API") == "true":
         return get_mock_fixtures()
 
@@ -190,13 +207,13 @@ def get_finished_matches():
         print("Use 'football-data' for football-data.org or 'api-sports' for API-SPORTS/API-Football.")
         return []
 
-    finished_matches = []
+    provider_matches = []
     for match in api_matches:
         parsed = parser(match)
         if parsed:
-            finished_matches.append(parsed)
+            provider_matches.append(parsed)
 
-    return finished_matches
+    return provider_matches
 
 
 def build_apps_script_url(action):
@@ -213,26 +230,26 @@ def main():
     print("Starting Match Synchronization Job...")
     print(f"Football API provider: {FOOTBALL_API_PROVIDER}")
 
-    finished_matches = get_finished_matches()
+    provider_matches = get_provider_matches()
 
-    if not finished_matches:
-        print("No finished matches found to synchronize.")
+    if not provider_matches:
+        print("No provider matches found to synchronize.")
         return
 
-    print("Finished matches detected from provider:")
-    for match in finished_matches[:10]:
-        print(f"- {match['matchId']}: {match['homeTeam']} vs {match['awayTeam']} ({match['homeScore']}-{match['awayScore']})")
-    if len(finished_matches) > 10:
-        print(f"...and {len(finished_matches) - 10} more finished matches")
+    print("Matches detected from provider:")
+    for match in provider_matches[:10]:
+        print(f"- {match['matchId']}: {match['homeTeam']} vs {match['awayTeam']} ({match.get('homeScore')}-{match.get('awayScore')}) [{match['status']}]")
+    if len(provider_matches) > 10:
+        print(f"...and {len(provider_matches) - 10} more provider matches")
 
     # POST updates to Apps Script API
-    print(f"Submitting {len(finished_matches)} match updates to Apps Script API...")
+    print(f"Submitting {len(provider_matches)} match updates to Apps Script API...")
 
     url = build_apps_script_url("adminSyncMatches")
     payload = {
         "action": "adminSyncMatches",
         "apiKey": ADMIN_API_KEY,
-        "matches": finished_matches,
+        "matches": provider_matches,
     }
 
     try:
@@ -247,6 +264,10 @@ def main():
 
         if result.get("success"):
             print("Successfully synced matches! Apps Script response:", result.get("message"))
+            if result.get("createdCount"):
+                print("New matches created in the Matches sheet:")
+                for match in result.get("createdMatches", []):
+                    print(f"- {match.get('matchId')}: {match.get('homeTeam')} vs {match.get('awayTeam')}")
             if result.get("unmatchedCount"):
                 print("Unmatched matches returned by Apps Script. Check these provider names against the Matches sheet:")
                 for match in result.get("unmatchedMatches", []):
