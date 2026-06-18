@@ -199,6 +199,16 @@ def get_finished_matches():
     return finished_matches
 
 
+def build_apps_script_url(action):
+    """Append action to the Apps Script URL without breaking existing query params."""
+    parsed_url = urllib.parse.urlparse(API_BASE_URL)
+    query_params = urllib.parse.parse_qsl(parsed_url.query, keep_blank_values=True)
+    query_params = [(key, value) for key, value in query_params if key != "action"]
+    query_params.append(("action", action))
+    updated_query = urllib.parse.urlencode(query_params)
+    return urllib.parse.urlunparse(parsed_url._replace(query=updated_query))
+
+
 def main():
     print("Starting Match Synchronization Job...")
     print(f"Football API provider: {FOOTBALL_API_PROVIDER}")
@@ -212,8 +222,7 @@ def main():
     # POST updates to Apps Script API
     print(f"Submitting {len(finished_matches)} match updates to Apps Script API...")
 
-    query_separator = "&" if "?" in API_BASE_URL else "?"
-    url = f"{API_BASE_URL}{query_separator}action=adminSyncMatches"
+    url = build_apps_script_url("adminSyncMatches")
     payload = {
         "action": "adminSyncMatches",
         "apiKey": ADMIN_API_KEY,
@@ -224,7 +233,7 @@ def main():
         request = urllib.request.Request(
             url,
             data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "text/plain;charset=utf-8"},
             method="POST",
         )
         with urllib.request.urlopen(request, timeout=20) as response:
@@ -233,7 +242,11 @@ def main():
         if result.get("success"):
             print("Successfully synced matches! Apps Script response:", result.get("message"))
         else:
-            print("Apps Script rejected sync:", result.get("error"))
+            error = result.get("error")
+            print("Apps Script rejected sync:", error)
+            if error == "Invalid POST action":
+                print("Hint: redeploy the latest backend/api.js to Apps Script so doPost can read action from the JSON body.")
+                print("Hint: verify API_BASE_URL is the Web App /exec URL, not the Apps Script editor or /dev URL.")
     except Exception as e:
         print("Failed to post updates to Apps Script Web App:", e)
 
