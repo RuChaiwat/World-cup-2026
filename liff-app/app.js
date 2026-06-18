@@ -101,6 +101,11 @@ function setupEventListeners() {
 
   // Submit Winner Prediction Button
   document.getElementById("btn-submit-winner").addEventListener("click", handleSubmitWinner);
+
+  const historyDateInput = document.getElementById("history-date-input");
+  if (historyDateInput) {
+    historyDateInput.addEventListener("change", () => loadHistoryMatches(historyDateInput.value));
+  }
 }
 
 // Handle User Authentication Submission
@@ -244,13 +249,24 @@ function loadMatches() {
   fetch(`${API_BASE_URL}?action=getMatches&employeeId=${currentUser.employeeId}&mode=prediction`)
     .then(res => res.json())
     .then(data => {
-      matchesData = data.matches;
-      renderMatches(data.matches);
+      matchesData = data.matches || [];
+      renderMatches(filterPredictionMatches(matchesData));
     })
     .catch(err => {
       showToast("โหลดแมตช์แข่งขันล้มเหลว", "error");
       container.innerHTML = `<p style="text-align: center; color: var(--accent-red);">เกิดข้อผิดพลาดในการดึงข้อมูลแมตช์</p>`;
     });
+}
+
+function filterPredictionMatches(matches) {
+  const now = new Date();
+  return (matches || []).filter(match => {
+    if (match.isPredictionOpen === true) return true;
+    const kickoff = new Date(match.kickoffTime);
+    if (isNaN(kickoff.getTime())) return false;
+    const predictionOpenAt = new Date(kickoff.getTime() - (3 * 24 * 60 * 60 * 1000));
+    return now >= predictionOpenAt && now < kickoff;
+  });
 }
 
 function renderMatches(matches) {
@@ -444,7 +460,6 @@ function loadHistoryScreen() {
   const dateInput = document.getElementById("history-date-input");
   if (!dateInput.value) {
     dateInput.value = getBangkokDateInputValue(new Date());
-    dateInput.addEventListener("change", () => loadHistoryMatches(dateInput.value));
   }
   loadHistoryMatches(dateInput.value);
 }
@@ -455,12 +470,20 @@ function loadHistoryMatches(dateValue) {
 
   fetch(`${API_BASE_URL}?action=getMatches&employeeId=${currentUser.employeeId}&mode=history&date=${dateValue}`)
     .then(res => res.json())
-    .then(data => renderHistoryMatches(data.matches || []))
+    .then(data => renderHistoryMatches(filterMatchesByBangkokDate(data.matches || [], dateValue)))
     .catch(err => {
       showToast("โหลดผลย้อนหลังล้มเหลว", "error");
       container.innerHTML = `<p style="text-align: center; color: var(--accent-red);">เกิดข้อผิดพลาดในการโหลดผลย้อนหลัง</p>`;
       console.error(err);
     });
+}
+
+function filterMatchesByBangkokDate(matches, dateValue) {
+  return (matches || []).filter(match => {
+    const kickoff = new Date(match.kickoffTime);
+    if (isNaN(kickoff.getTime())) return false;
+    return getBangkokDateInputValue(kickoff) === dateValue;
+  });
 }
 
 function renderHistoryMatches(matches) {
