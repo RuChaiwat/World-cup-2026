@@ -676,15 +676,35 @@ function renderLeaderboard(board, currentUserRow = null) {
 // FRONTEND UTILITY HELPERS
 // ==========================================
 
-// Map country names to flag codes (from flagcdn.com)
+// Map country/team names from data providers to flag codes (from flagcdn.com).
+// Keep common aliases because providers may use FIFA names, short names, or local names.
 function getTeamCode(teamName) {
   const map = {
-    "argentina": "ar", "brazil": "br", "england": "gb-eng", "france": "fr",
-    "germany": "de", "spain": "es", "portugal": "pt", "italy": "it",
-    "netherlands": "nl", "belgium": "be", "croatia": "hr", "uruguay": "uy",
-    "mexico": "mx", "usa": "us", "japan": "jp", "south korea": "kr"
+    "argentina": "ar", "australia": "au", "austria": "at", "belgium": "be",
+    "bosnia-herzegovina": "ba", "bosnia and herzegovina": "ba", "brazil": "br",
+    "canada": "ca", "chile": "cl", "colombia": "co", "costa rica": "cr",
+    "croatia": "hr", "curacao": "cw", "curaçao": "cw", "czech republic": "cz",
+    "czechia": "cz", "denmark": "dk", "ecuador": "ec", "england": "gb-eng",
+    "france": "fr", "germany": "de", "ghana": "gh", "haiti": "ht",
+    "iran": "ir", "iran pr": "ir", "italy": "it", "japan": "jp",
+    "mexico": "mx", "morocco": "ma", "netherlands": "nl", "new zealand": "nz",
+    "nigeria": "ng", "paraguay": "py", "peru": "pe", "poland": "pl",
+    "portugal": "pt", "qatar": "qa", "saudi arabia": "sa", "scotland": "gb-sct",
+    "senegal": "sn", "serbia": "rs", "south africa": "za", "south korea": "kr",
+    "korea republic": "kr", "spain": "es", "switzerland": "ch", "turkey": "tr",
+    "türkiye": "tr", "ukraine": "ua", "united states": "us", "united states of america": "us",
+    "usa": "us", "uruguay": "uy", "uzbekistan": "uz", "wales": "gb-wls"
   };
-  return map[String(teamName).toLowerCase().trim()] || "un";
+
+  const normalizedName = String(teamName || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/&/g, "and")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return map[normalizedName] || "un";
 }
 
 // Show standard premium toast notifications
