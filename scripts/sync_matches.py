@@ -219,6 +219,12 @@ def main():
         print("No finished matches found to synchronize.")
         return
 
+    print("Finished matches detected from provider:")
+    for match in finished_matches[:10]:
+        print(f"- {match['matchId']}: {match['homeTeam']} vs {match['awayTeam']} ({match['homeScore']}-{match['awayScore']})")
+    if len(finished_matches) > 10:
+        print(f"...and {len(finished_matches) - 10} more finished matches")
+
     # POST updates to Apps Script API
     print(f"Submitting {len(finished_matches)} match updates to Apps Script API...")
 
@@ -241,6 +247,14 @@ def main():
 
         if result.get("success"):
             print("Successfully synced matches! Apps Script response:", result.get("message"))
+            if result.get("unmatchedCount"):
+                print("Unmatched matches returned by Apps Script. Check these provider names against the Matches sheet:")
+                for match in result.get("unmatchedMatches", []):
+                    print(f"- {match.get('matchId')}: {match.get('homeTeam')} vs {match.get('awayTeam')}")
+            if result.get("skippedOverriddenCount"):
+                print("Skipped matches with admin overrides:")
+                for match in result.get("skippedOverriddenMatches", []):
+                    print(f"- {match.get('matchId')}: {match.get('homeTeam')} vs {match.get('awayTeam')}")
         else:
             error = result.get("error")
             print("Apps Script rejected sync:", error)
