@@ -529,7 +529,7 @@ body {
   -webkit-backdrop-filter: var(--glass-blur);
   border-top: 1px solid var(--card-border);
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(4, 1fr);
   align-items: center;
   z-index: 99;
 }

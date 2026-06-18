@@ -22,16 +22,18 @@ document.addEventListener("DOMContentLoaded", () => {
 function setupEventListeners() {
   // Connection button
   document.getElementById("btn-connect").addEventListener("click", () => {
-    apiBaseUrl = document.getElementById("input-api-url").value.trim();
+    apiBaseUrl = normalizeApiUrl(document.getElementById("input-api-url").value);
     adminToken = document.getElementById("input-api-key").value.trim();
     
-    localStorage.setItem("wc_admin_api_url", apiBaseUrl);
-    localStorage.setItem("wc_admin_token", adminToken);
+    document.getElementById("input-api-url").value = apiBaseUrl;
     
     if (!apiBaseUrl || !adminToken) {
       showAlert("กรุณาระบุ API URL และ TOKEN", "error");
       return;
     }
+    
+    localStorage.setItem("wc_admin_api_url", apiBaseUrl);
+    localStorage.setItem("wc_admin_token", adminToken);
     connectAndLoad();
   });
 
@@ -78,9 +80,70 @@ function connectAndLoad() {
     .then(() => fetchMatches())
     .then(() => showAlert("เชื่อมต่อสำเร็จ ดึงข้อมูลครบถ้วน!", "success"))
     .catch(err => {
-      showAlert("เชื่อมต่อล้มเหลว: โปรดตรวจสอบ URL หรือ TOKEN", "error");
-      console.error(err);
+      showAlert(getFriendlyErrorMessage(err), "error");
+      console.error("Admin panel connection failed:", err);
     });
+}
+
+// ==========================================
+// API HELPERS
+// ==========================================
+function normalizeApiUrl(url) {
+  return String(url || "").trim().replace(/\/+$/, "");
+}
+
+function buildApiUrl(action, params = {}) {
+  if (!apiBaseUrl) throw new Error("No API URL configured");
+  const query = new URLSearchParams({ action, ...params });
+  return `${apiBaseUrl}?${query.toString()}`;
+}
+
+function fetchJson(action, params = {}) {
+  return fetch(buildApiUrl(action, { apiKey: adminToken, ...params }))
+    .then(parseJsonResponse);
+}
+
+function postJson(action, body) {
+  return fetch(buildApiUrl(action), {
+    method: "POST",
+    // Google Apps Script Web Apps often work more reliably without a CORS preflight.
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(body)
+  }).then(parseJsonResponse);
+}
+
+function parseJsonResponse(response) {
+  return response.text().then(text => {
+    let payload;
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch (err) {
+      const preview = text ? text.slice(0, 160) : "empty response";
+      throw new Error(`API ไม่ได้ส่ง JSON กลับมา (${preview})`);
+    }
+
+    if (!response.ok) {
+      throw new Error(payload.error || `HTTP ${response.status}`);
+    }
+
+    return payload;
+  });
+}
+
+function getFriendlyErrorMessage(err) {
+  const message = err && err.message ? err.message : String(err);
+
+  if (message.includes("Failed to fetch") || message.includes("NetworkError")) {
+    return "เชื่อมต่อ API ไม่ได้: ตรวจสอบว่าใช้ Web App URL ที่ลงท้าย /exec, Deploy เป็น Anyone แล้ว และไม่ได้เปิดไฟล์ผ่าน browser ที่บล็อก request";
+  }
+  if (message.includes("Unauthorized")) {
+    return "TOKEN ไม่ถูกต้อง: ตรวจสอบว่า Admin API Key ตรงกับค่า ADMIN_API_KEY ใน Apps Script";
+  }
+  if (message.includes("API ไม่ได้ส่ง JSON")) {
+    return `${message} — มักเกิดจาก URL ไม่ใช่ Web App /exec หรือ Apps Script ยังไม่ได้ Deploy เวอร์ชันล่าสุด`;
+  }
+
+  return `เชื่อมต่อล้มเหลว: ${message}`;
 }
 
 // ==========================================
@@ -93,15 +156,18 @@ function fetchUsers() {
   const tbody = document.getElementById("users-table-body");
   tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-secondary);">กำลังโหลดพนักงาน...</td></tr>`;
   
-  return fetch(`${apiBaseUrl}?action=adminGetUsers&apiKey=${adminToken}`)
-    .then(res => res.json())
+  return fetchJson("adminGetUsers")
     .then(data => {
       if (data.error) {
         tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--accent-red);">${data.error}</td></tr>`;
-        return;
+        throw new Error(data.error);
       }
       usersList = data.users || [];
       renderUsersTable(usersList);
+    })
+    .catch(err => {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--accent-red);">${getFriendlyErrorMessage(err)}</td></tr>`;
+      throw err;
     });
 }
 
@@ -167,15 +233,11 @@ function handleSavePinReset() {
 
   showAlert("กำลังดำเนินการรีเซ็ต PIN...", "");
   
-  fetch(`${apiBaseUrl}?action=adminResetPin`, {
-    method: "POST",
-    body: JSON.stringify({
-      apiKey: adminToken,
-      employeeId: empId,
-      newPin: pin
-    })
+  postJson("adminResetPin", {
+    apiKey: adminToken,
+    employeeId: empId,
+    newPin: pin
   })
-  .then(res => res.json())
   .then(data => {
     if (data.success) {
       showAlert("รีเซ็ต PIN สำเร็จ!", "success");
@@ -201,15 +263,18 @@ function fetchMatches() {
   const tbody = document.getElementById("matches-table-body");
   tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-secondary);">กำลังโหลดแมตช์แข่งขัน...</td></tr>`;
   
-  return fetch(`${apiBaseUrl}?action=adminGetMatches&apiKey=${adminToken}`)
-    .then(res => res.json())
+  return fetchJson("adminGetMatches")
     .then(data => {
       if (data.error) {
         tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--accent-red);">${data.error}</td></tr>`;
-        return;
+        throw new Error(data.error);
       }
       matchesList = data.matches || [];
       renderMatchesTable(matchesList);
+    })
+    .catch(err => {
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--accent-red);">${getFriendlyErrorMessage(err)}</td></tr>`;
+      throw err;
     });
 }
 
@@ -300,17 +365,13 @@ function handleSaveOverride() {
   
   showAlert("กำลังดำเนินการบันทึก Override...", "");
   
-  fetch(`${apiBaseUrl}?action=adminOverrideScore`, {
-    method: "POST",
-    body: JSON.stringify({
-      apiKey: adminToken,
-      matchId,
-      homeScore,
-      awayScore,
-      qualifiedTeam: qualTeamVal
-    })
+  postJson("adminOverrideScore", {
+    apiKey: adminToken,
+    matchId,
+    homeScore,
+    awayScore,
+    qualifiedTeam: qualTeamVal
   })
-  .then(res => res.json())
   .then(data => {
     if (data.success) {
       showAlert("ตังค่า Override สกอร์สำเร็จ!", "success");
