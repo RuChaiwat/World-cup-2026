@@ -735,7 +735,7 @@ function isInvalidGetActionError(errorMessage) {
 }
 
 function loadPredictionHistoryFallback() {
-  showToast("กรุณา Deploy Apps Script เวอร์ชันล่าสุดเพื่อดูประวัติแบบเต็ม", "error");
+  console.warn("getPredictionHistory is unavailable; falling back to latest predictions from getMatches.");
 
   return fetch(`${API_BASE_URL}?action=getMatches&employeeId=${currentUser.employeeId}&mode=all`)
     .then(res => res.json())
@@ -744,10 +744,7 @@ function loadPredictionHistoryFallback() {
         throw new Error(data.error);
       }
       const predictions = buildLatestPredictionHistoryFromMatches(data.matches || []);
-      renderPredictionHistory(
-        predictions,
-        "ขณะนี้ Apps Script ยังไม่มี action getPredictionHistory จึงแสดงได้เฉพาะคำทายล่าสุดต่อแมตช์ กรุณา Deploy backend/api.js เวอร์ชันล่าสุดเพื่อดูประวัติทุกครั้งที่แก้ไขคำทาย"
-      );
+      renderPredictionHistory(predictions);
     });
 }
 
