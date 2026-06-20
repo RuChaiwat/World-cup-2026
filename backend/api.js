@@ -13,6 +13,8 @@ function doGet(e) {
         return handleGetMatches(e);
       case "getLeaderboard":
         return handleGetLeaderboard(e);
+      case "getPredictionHistory":
+        return handleGetPredictionHistory(e);
       case "adminGetUsers":
         return handleAdminGetUsers(e);
       case "adminGetMatches":
@@ -344,6 +346,97 @@ function handleGetLeaderboard(e) {
     leaderboard: topBoard,
     currentUser: isCurrentUserInTop ? null : currentUserRow
   });
+}
+
+function handleGetPredictionHistory(e) {
+  const employeeId = e.parameter.employeeId || "";
+  if (!employeeId) {
+    return jsonResponse({ error: "employeeId parameter is required" }, 400);
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const subSheet = ss.getSheetByName("Raw_Submissions");
+  const matchSheet = ss.getSheetByName("Matches");
+  const submissions = getSheetData(subSheet).filter(row => String(row.Employee_ID) === String(employeeId));
+  const matches = getSheetData(matchSheet);
+
+  const matchById = {};
+  matches.forEach(match => {
+    matchById[String(match.Match_ID)] = match;
+  });
+
+  const latestTimestampByMatch = {};
+  submissions.forEach(sub => {
+    const matchId = String(sub.Match_ID);
+    const timestamp = new Date(sub.Timestamp).getTime();
+    if (!latestTimestampByMatch[matchId] || timestamp >= latestTimestampByMatch[matchId]) {
+      latestTimestampByMatch[matchId] = timestamp;
+    }
+  });
+
+  const history = submissions
+    .map(sub => buildPredictionHistoryRow(sub, matchById[String(sub.Match_ID)], latestTimestampByMatch))
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+  return jsonResponse({
+    employeeId: employeeId,
+    predictions: history
+  });
+}
+
+function buildPredictionHistoryRow(sub, match, latestTimestampByMatch) {
+  const matchId = String(sub.Match_ID);
+  const submittedAt = new Date(sub.Timestamp);
+  const latestTimestamp = latestTimestampByMatch[matchId];
+  const isLatestForMatch = latestTimestamp !== undefined && submittedAt.getTime() === latestTimestamp;
+  const points = match ? calculatePredictionPointsForSubmission(sub, match) : null;
+
+  return {
+    timestamp: sub.Timestamp,
+    matchId: matchId,
+    homeTeam: match ? match.Home_Team : "",
+    awayTeam: match ? match.Away_Team : "",
+    kickoffTime: match ? match.Kickoff_Time : "",
+    stage: match ? match.Stage : "",
+    status: match ? match.Status : "",
+    predictedHomeScore: sub.Home_Score_Predict,
+    predictedAwayScore: sub.Away_Score_Predict,
+    predictedQualifiedTeam: sub.Qualified_Team_Predict || "",
+    actualHomeScore: match && isMatchFinished(match) ? getSettledHomeScore(match) : "",
+    actualAwayScore: match && isMatchFinished(match) ? getSettledAwayScore(match) : "",
+    actualQualifiedTeam: match && isMatchFinished(match) ? getSettledQualifier(match) : "",
+    points: points,
+    isScored: points !== null,
+    isLatestForMatch: isLatestForMatch
+  };
+}
+
+function calculatePredictionPointsForSubmission(sub, match) {
+  if (!isMatchFinished(match)) return null;
+
+  const actHome = getSettledHomeScore(match);
+  const actAway = getSettledAwayScore(match);
+  const actQualify = getSettledQualifier(match);
+  const predHome = Number(sub.Home_Score_Predict);
+  const predAway = Number(sub.Away_Score_Predict);
+  let points = 0;
+
+  if (predHome === actHome && predAway === actAway) {
+    points += 3;
+  } else if ((predHome > predAway && actHome > actAway) ||
+             (predHome < predAway && actHome < actAway) ||
+             (predHome === predAway && actHome === actAway)) {
+    points += 1;
+  }
+
+  if (String(match.Stage).toLowerCase() !== "group") {
+    const predQualify = sub.Qualified_Team_Predict;
+    if (predQualify && predQualify === actQualify) {
+      points += 1;
+    }
+  }
+
+  return points;
 }
 
 // ==========================================

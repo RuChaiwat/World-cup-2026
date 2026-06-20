@@ -119,6 +119,11 @@ function setupEventListeners() {
   // Submit Winner Prediction Button
   document.getElementById("btn-submit-winner").addEventListener("click", handleSubmitWinner);
 
+  const backLeaderboardButton = document.getElementById("btn-back-leaderboard");
+  if (backLeaderboardButton) {
+    backLeaderboardButton.addEventListener("click", () => switchScreen("leaderboard"));
+  }
+
   const historyDateInput = document.getElementById("history-date-input");
   if (historyDateInput) {
     historyDateInput.addEventListener("change", () => loadHistoryMatches(historyDateInput.value));
@@ -203,7 +208,7 @@ function loginUser(employeeId, fullName, lineUserId) {
   document.getElementById("bottom-nav").style.display = "grid";
 
   // Transition to requested tab from LIFF/Rich Menu, defaulting to matches.
-  const allowedScreens = ["matches", "winner", "history", "leaderboard"];
+  const allowedScreens = ["matches", "winner", "history", "leaderboard", "prediction-detail"];
   switchScreen(allowedScreens.includes(requestedInitialScreen) ? requestedInitialScreen : "matches");
 }
 
@@ -240,6 +245,8 @@ function switchScreen(screenId) {
     loadHistoryScreen();
   } else if (screenId === "leaderboard") {
     loadLeaderboard();
+  } else if (screenId === "prediction-detail") {
+    loadPredictionHistory();
   }
 }
 
@@ -673,6 +680,11 @@ function renderLeaderboard(board, currentUserRow = null) {
     const isMedal = isNaN(rankDisplay);
 
     row.className = `leader-row ${rankClass}`;
+    if (isMe) {
+      row.setAttribute("role", "button");
+      row.setAttribute("tabindex", "0");
+      row.setAttribute("aria-label", "เปิดประวัติการทายของฉัน");
+    }
     row.innerHTML = `
       <div class="leader-rank ${isMedal ? 'medal' : ''}">${rankDisplay}</div>
       <div class="leader-name">
@@ -682,6 +694,83 @@ function renderLeaderboard(board, currentUserRow = null) {
       <div class="leader-points">${user.Total_Points} คะแนน</div>
     `;
 
+    if (isMe) {
+      row.addEventListener("click", () => switchScreen("prediction-detail"));
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          switchScreen("prediction-detail");
+        }
+      });
+    }
+
+    container.appendChild(row);
+  });
+}
+
+function loadPredictionHistory() {
+  const container = document.getElementById("prediction-history-container");
+  container.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">กำลังโหลดประวัติการทาย...</p>`;
+
+  fetch(`${API_BASE_URL}?action=getPredictionHistory&employeeId=${currentUser.employeeId}`)
+    .then(res => res.json())
+    .then(data => {
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      renderPredictionHistory(data.predictions || []);
+    })
+    .catch(err => {
+      showToast("โหลดประวัติการทายล้มเหลว", "error");
+      container.innerHTML = `<p style="text-align: center; color: var(--accent-red);">เกิดข้อผิดพลาดในการโหลดประวัติการทาย</p>`;
+      console.error(err);
+    });
+}
+
+function renderPredictionHistory(predictions) {
+  const container = document.getElementById("prediction-history-container");
+  if (predictions.length === 0) {
+    container.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">ยังไม่มีประวัติการทายผล</p>`;
+    return;
+  }
+
+  container.innerHTML = "";
+  predictions.forEach(pred => {
+    const row = document.createElement("div");
+    row.className = "prediction-history-card glass-panel";
+
+    const submittedAt = formatBangkokDateTime(pred.timestamp);
+    const kickoffAt = pred.kickoffTime ? formatBangkokDateTime(pred.kickoffTime) : "-";
+    const pointsText = pred.isScored ? `${pred.points} คะแนน` : "รอผลการแข่งขัน";
+    const pointsClass = pred.isScored ? "scored" : "pending";
+    const latestBadge = pred.isLatestForMatch ? `<span class="history-badge latest">คำทายล่าสุด</span>` : `<span class="history-badge old">คำทายเก่า</span>`;
+    const actualScoreHtml = pred.isScored
+      ? `<div class="history-score-line"><span>ผลจริง</span><strong>${pred.actualHomeScore} - ${pred.actualAwayScore}</strong></div>`
+      : `<div class="history-score-line muted"><span>ผลจริง</span><strong>ยังไม่จบการแข่งขัน</strong></div>`;
+    const qualifierHtml = pred.predictedQualifiedTeam
+      ? `<div class="history-small">ทีมเข้ารอบที่ทาย: ${pred.predictedQualifiedTeam}${pred.actualQualifiedTeam ? ` / ผลจริง: ${pred.actualQualifiedTeam}` : ""}</div>`
+      : "";
+
+    row.innerHTML = `
+      <div class="history-card-header">
+        <div>
+          <div class="history-stage">${pred.stage || "Match"}</div>
+          <div class="history-teams">${pred.homeTeam || "-"} vs ${pred.awayTeam || "-"}</div>
+        </div>
+        <div class="history-points ${pointsClass}">${pointsText}</div>
+      </div>
+      <div class="history-score-grid">
+        <div class="history-score-line"><span>คุณทาย</span><strong>${pred.predictedHomeScore} - ${pred.predictedAwayScore}</strong></div>
+        ${actualScoreHtml}
+      </div>
+      ${qualifierHtml}
+      <div class="history-footer">
+        ${latestBadge}
+        <span>ส่งเมื่อ ${submittedAt}</span>
+      </div>
+      <div class="history-small">Kickoff: ${kickoffAt}</div>
+    `;
+
     container.appendChild(row);
   });
 }
@@ -689,6 +778,19 @@ function renderLeaderboard(board, currentUserRow = null) {
 // ==========================================
 // FRONTEND UTILITY HELPERS
 // ==========================================
+
+function formatBangkokDateTime(value) {
+  const date = new Date(value);
+  if (isNaN(date.getTime())) return "-";
+  return date.toLocaleString("th-TH", {
+    timeZone: "Asia/Bangkok",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
 
 // Map country/team names from data providers to flag codes (from flagcdn.com).
 // Keep common aliases because providers may use FIFA names, short names, or local names.
