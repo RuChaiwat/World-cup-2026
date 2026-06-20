@@ -716,6 +716,9 @@ function loadPredictionHistory() {
     .then(res => res.json())
     .then(data => {
       if (data.error) {
+        if (isInvalidGetActionError(data.error)) {
+          return loadPredictionHistoryFallback();
+        }
         throw new Error(data.error);
       }
       renderPredictionHistory(data.predictions || []);
@@ -727,14 +730,94 @@ function loadPredictionHistory() {
     });
 }
 
-function renderPredictionHistory(predictions) {
+function isInvalidGetActionError(errorMessage) {
+  return String(errorMessage || "").toLowerCase().includes("invalid get action");
+}
+
+function loadPredictionHistoryFallback() {
+  showToast("กรุณา Deploy Apps Script เวอร์ชันล่าสุดเพื่อดูประวัติแบบเต็ม", "error");
+
+  return fetch(`${API_BASE_URL}?action=getMatches&employeeId=${currentUser.employeeId}&mode=all`)
+    .then(res => res.json())
+    .then(data => {
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      const predictions = buildLatestPredictionHistoryFromMatches(data.matches || []);
+      renderPredictionHistory(
+        predictions,
+        "ขณะนี้ Apps Script ยังไม่มี action getPredictionHistory จึงแสดงได้เฉพาะคำทายล่าสุดต่อแมตช์ กรุณา Deploy backend/api.js เวอร์ชันล่าสุดเพื่อดูประวัติทุกครั้งที่แก้ไขคำทาย"
+      );
+    });
+}
+
+function buildLatestPredictionHistoryFromMatches(matches) {
+  return (matches || [])
+    .filter(match => match.prediction && match.prediction.timestamp)
+    .map(match => {
+      const points = calculateClientPredictionPoints(match);
+      return {
+        timestamp: match.prediction.timestamp,
+        matchId: match.matchId,
+        homeTeam: match.homeTeam,
+        awayTeam: match.awayTeam,
+        kickoffTime: match.kickoffTime,
+        stage: match.stage,
+        status: match.status,
+        predictedHomeScore: match.prediction.homeScore,
+        predictedAwayScore: match.prediction.awayScore,
+        predictedQualifiedTeam: match.prediction.qualifiedTeam || "",
+        actualHomeScore: match.actual ? match.actual.homeScore : "",
+        actualAwayScore: match.actual ? match.actual.awayScore : "",
+        actualQualifiedTeam: match.actual ? match.actual.qualifiedTeam : "",
+        points: points,
+        isScored: points !== null,
+        isLatestForMatch: true
+      };
+    })
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+}
+
+function calculateClientPredictionPoints(match) {
+  if (!match.actual || match.actual.homeScore === "" || match.actual.homeScore === null || match.actual.homeScore === undefined) {
+    return null;
+  }
+
+  const predHome = Number(match.prediction.homeScore);
+  const predAway = Number(match.prediction.awayScore);
+  const actHome = Number(match.actual.homeScore);
+  const actAway = Number(match.actual.awayScore);
+  let points = 0;
+
+  if (predHome === actHome && predAway === actAway) {
+    points += 3;
+  } else if ((predHome > predAway && actHome > actAway) ||
+             (predHome < predAway && actHome < actAway) ||
+             (predHome === predAway && actHome === actAway)) {
+    points += 1;
+  }
+
+  if (String(match.stage || "").toLowerCase() !== "group") {
+    const predictedQualifiedTeam = match.prediction.qualifiedTeam;
+    const actualQualifiedTeam = match.actual.qualifiedTeam;
+    if (predictedQualifiedTeam && actualQualifiedTeam && predictedQualifiedTeam === actualQualifiedTeam) {
+      points += 1;
+    }
+  }
+
+  return points;
+}
+
+function renderPredictionHistory(predictions, noticeMessage = "") {
   const container = document.getElementById("prediction-history-container");
   if (predictions.length === 0) {
     container.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">ยังไม่มีประวัติการทายผล</p>`;
     return;
   }
 
-  container.innerHTML = "";
+  container.innerHTML = noticeMessage
+    ? `<div class="history-notice">${noticeMessage}</div>`
+    : "";
   predictions.forEach(pred => {
     const row = document.createElement("div");
     row.className = "prediction-history-card glass-panel";
