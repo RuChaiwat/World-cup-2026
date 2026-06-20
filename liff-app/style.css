@@ -529,7 +529,7 @@ body {
   -webkit-backdrop-filter: var(--glass-blur);
   border-top: 1px solid var(--card-border);
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(4, 1fr);
   align-items: center;
   z-index: 99;
 }
@@ -592,4 +592,132 @@ body {
 .toast.error {
   border-color: var(--accent-red);
   color: var(--accent-red);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  padding: 12px 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.btn-secondary:active {
+  transform: scale(0.98);
+}
+
+.leader-row.current-user {
+  cursor: pointer;
+}
+
+.leader-row.current-user:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+
+.prediction-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.prediction-history-card {
+  padding: 16px;
+}
+
+.history-card-header,
+.history-footer,
+.history-score-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.history-card-header {
+  margin-bottom: 12px;
+}
+
+.history-stage {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary);
+  text-transform: uppercase;
+}
+
+.history-teams {
+  font-size: 15px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.history-points {
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.history-points.scored {
+  background: rgba(16, 185, 129, 0.14);
+  color: var(--accent-green);
+}
+
+.history-points.pending {
+  background: rgba(245, 158, 11, 0.14);
+  color: var(--primary);
+}
+
+.history-score-grid {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.history-score-line {
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 10px 12px;
+}
+
+.history-score-line span,
+.history-small,
+.history-footer {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.history-score-line strong {
+  color: var(--text-primary);
+  font-size: 16px;
+}
+
+.history-score-line.muted strong {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.history-footer {
+  margin-top: 12px;
+}
+
+.history-badge {
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.history-badge.latest {
+  background: rgba(59, 130, 246, 0.16);
+  color: var(--secondary);
+}
+
+.history-badge.old {
+  background: rgba(156, 163, 175, 0.14);
+  color: var(--text-secondary);
 }
