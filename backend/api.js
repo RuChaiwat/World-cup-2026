@@ -429,7 +429,7 @@ function calculatePredictionPointsForSubmission(sub, match) {
     points += 1;
   }
 
-  if (String(match.Stage).toLowerCase() !== "group") {
+  if (isRoundOf16OrLaterStage(match.Stage)) {
     const predQualify = sub.Qualified_Team_Predict;
     if (predQualify && predQualify === actQualify) {
       points += 1;
@@ -712,8 +712,8 @@ function recalculateLeaderboard(ss) {
         totalPoints += 1;
       }
       
-      // Knockout round bonus (+1 pt)
-      if (String(m.Stage).toLowerCase() !== "group") {
+      // Knockout bonus starts from Round of 16 onward (+1 pt).
+      if (isRoundOf16OrLaterStage(m.Stage)) {
         const predQualify = pred.Qualified_Team_Predict;
         if (predQualify && predQualify === actQualify) {
           totalPoints += 1;
@@ -762,6 +762,18 @@ function recalculateLeaderboard(ss) {
     const rowsToWrite = leaderboard.map(r => [r.Employee_ID, r.Full_Name, r.Total_Points, r.Rank]);
     leadSheet.getRange(2, 1, rowsToWrite.length, 4).setValues(rowsToWrite);
   }
+}
+
+
+function isRoundOf16OrLaterStage(stage) {
+  const normalizedStage = String(stage || "").toLowerCase().replace(/[\s_-]+/g, " ").trim();
+  return [
+    "round of 16", "round 16", "last 16", "r16", "16",
+    "quarterfinals", "quarter finals", "quarter-finals", "quarter final", "quarter-final",
+    "semifinals", "semi finals", "semi-finals", "semifinal", "semi final", "semi-final",
+    "third place", "third-place", "3rd place",
+    "final", "finals"
+  ].includes(normalizedStage);
 }
 
 function isMatchFinished(m) {

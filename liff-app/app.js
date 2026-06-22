@@ -335,17 +335,20 @@ function renderMatches(matches) {
       });
 
       // Handle scores and status badges
-      const pred = m.prediction || { homeScore: "", awayScore: "", qualifiedTeam: "" };
+      const hasPrediction = Boolean(m.prediction && m.prediction.timestamp);
+      const pred = hasPrediction
+        ? m.prediction
+        : { homeScore: 0, awayScore: 0, qualifiedTeam: "", timestamp: "" };
       const isPredictionOpen = isMatchPredictionOpen(m);
       const isMatchLocked = m.isLocked === true || !isPredictionOpen;
       const lockBadgeHtml = isPredictionOpen
         ? `<span class="lock-badge open">🔓 เปิดรับทายผล</span>`
         : `<span class="lock-badge closed">🔒 ปิดรับทายผล</span>`;
 
-      // Knockout stage team qualifier picker
-      const isKnockout = m.stage && String(m.stage).toLowerCase() !== "group";
+      // Knockout bonus starts from Round of 16 onward, not earlier knockout rounds.
+      const hasKnockoutBonus = isRoundOf16OrLaterStage(m.stage);
       let knockoutSelectionHtml = "";
-      if (isKnockout) {
+      if (hasKnockoutBonus) {
         const selectedTeam = pred.qualifiedTeam || "";
         knockoutSelectionHtml = `
           <div class="form-group" style="margin-top: 8px;">
@@ -411,7 +414,7 @@ function renderMatches(matches) {
         ${actualScoreHtml}
         
         <button class="card-action submit-pred-btn" data-id="${m.matchId}" ${!isPredictionOpen ? 'disabled' : ''}>
-          ${pred.timestamp ? 'แก้ไขคำทายผล' : 'ส่งคำทายผล'}
+          ${hasPrediction ? 'แก้ไขคำทายผล' : 'ส่งคำทายผล'}
         </button>
       `;
 
@@ -794,7 +797,7 @@ function calculateClientPredictionPoints(match) {
     points += 1;
   }
 
-  if (String(match.stage || "").toLowerCase() !== "group") {
+  if (isRoundOf16OrLaterStage(match.stage)) {
     const predictedQualifiedTeam = match.prediction.qualifiedTeam;
     const actualQualifiedTeam = match.actual.qualifiedTeam;
     if (predictedQualifiedTeam && actualQualifiedTeam && predictedQualifiedTeam === actualQualifiedTeam) {
@@ -803,6 +806,17 @@ function calculateClientPredictionPoints(match) {
   }
 
   return points;
+}
+
+function isRoundOf16OrLaterStage(stage) {
+  const normalizedStage = String(stage || "").toLowerCase().replace(/[\s_-]+/g, " ").trim();
+  return [
+    "round of 16", "round 16", "last 16", "r16", "16",
+    "quarterfinals", "quarter finals", "quarter-finals", "quarter final", "quarter-final",
+    "semifinals", "semi finals", "semi-finals", "semifinal", "semi final", "semi-final",
+    "third place", "third-place", "3rd place",
+    "final", "finals"
+  ].includes(normalizedStage);
 }
 
 function renderPredictionHistory(predictions, noticeMessage = "") {
