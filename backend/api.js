@@ -336,8 +336,16 @@ function handleGetLeaderboard(e) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const boardSheet = ss.getSheetByName("Leaderboard");
   const data = getSheetData(boardSheet);
-  
-  const sortedBoard = data.sort((a, b) => Number(a.Rank) - Number(b.Rank));
+  const participantIds = getParticipantEmployeeIds(ss);
+
+  const sortedBoard = data
+    .filter(row => participantIds[String(row.Employee_ID)])
+    .sort((a, b) => {
+      const pointDiff = Number(b.Total_Points) - Number(a.Total_Points);
+      if (pointDiff !== 0) return pointDiff;
+      return String(a.Full_Name).localeCompare(String(b.Full_Name));
+    });
+  applyDenseRanks(sortedBoard);
   const topBoard = sortedBoard.slice(0, 10);
   const currentUserRow = employeeId ? sortedBoard.find(row => String(row.Employee_ID) === String(employeeId)) : null;
   const isCurrentUserInTop = currentUserRow ? topBoard.some(row => String(row.Employee_ID) === String(employeeId)) : false;
@@ -683,8 +691,12 @@ function recalculateLeaderboard(ss) {
   
   const leaderboard = [];
   
+  const participantIds = getParticipantEmployeeIdsFromRows(submissions, winners);
+
   users.forEach(u => {
     const empId = String(u.Employee_ID);
+    if (!participantIds[empId]) return;
+
     const fullName = u.Full_Name;
     let totalPoints = 0;
     
@@ -745,15 +757,7 @@ function recalculateLeaderboard(ss) {
   });
   
   // Apply dense ranking
-  let currentRank = 0;
-  let currentScore = -1;
-  leaderboard.forEach((row, idx) => {
-    if (row.Total_Points !== currentScore) {
-      currentRank = idx + 1;
-      currentScore = row.Total_Points;
-    }
-    row.Rank = currentRank;
-  });
+  applyDenseRanks(leaderboard);
   
   // Clear and rewrite Leaderboard
   leadSheet.clearContents();
@@ -764,6 +768,43 @@ function recalculateLeaderboard(ss) {
   }
 }
 
+
+
+function getParticipantEmployeeIds(ss) {
+  const subSheet = ss.getSheetByName("Raw_Submissions");
+  const winSheet = ss.getSheetByName("Tournament_Winner_Submissions");
+  const submissions = getSheetData(subSheet);
+  const winners = getSheetData(winSheet);
+  return getParticipantEmployeeIdsFromRows(submissions, winners);
+}
+
+function getParticipantEmployeeIdsFromRows(submissions, winners) {
+  const participantIds = {};
+  submissions.forEach(sub => {
+    if (sub.Employee_ID !== "" && sub.Employee_ID !== null && sub.Employee_ID !== undefined) {
+      participantIds[String(sub.Employee_ID)] = true;
+    }
+  });
+  winners.forEach(winner => {
+    if (winner.Employee_ID !== "" && winner.Employee_ID !== null && winner.Employee_ID !== undefined) {
+      participantIds[String(winner.Employee_ID)] = true;
+    }
+  });
+  return participantIds;
+}
+
+function applyDenseRanks(leaderboard) {
+  let currentRank = 0;
+  let currentScore = null;
+  leaderboard.forEach((row, idx) => {
+    const totalPoints = Number(row.Total_Points);
+    if (currentScore === null || totalPoints !== currentScore) {
+      currentRank = idx + 1;
+      currentScore = totalPoints;
+    }
+    row.Rank = currentRank;
+  });
+}
 
 function isRoundOf16OrLaterStage(stage) {
   const normalizedStage = String(stage || "").toLowerCase().replace(/[\s_-]+/g, " ").trim();
