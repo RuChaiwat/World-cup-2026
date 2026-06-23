@@ -1,5 +1,5 @@
 // CONFIGURATION
-const ADMIN_API_KEY = "WC2026_ADMIN_SECURE_TOKEN_XYZ"; // Change this to a secure key
+const ADMIN_API_KEY = "13240007"; // Change this to a secure key
 
 /**
  * Handle HTTP GET Requests
