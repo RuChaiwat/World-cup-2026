@@ -202,14 +202,23 @@ function handleGetMatches(e) {
     .map(m => buildMatchResponse(m, userPredicts[m.Match_ID] || null, now))
     .filter(m => shouldIncludeMatchForMode(m, mode, dateFilter));
   
-  const firstSemifinal = matches.find(m => String(m.Stage).toLowerCase() === "semifinals");
+  const firstSemifinal = matches.find(m => isSemifinalStage(m.Stage));
   const winnerLockTime = firstSemifinal ? new Date(firstSemifinal.Kickoff_Time) : null;
   const isWinnerLocked = winnerLockTime ? (new Date() >= winnerLockTime) : false;
+  const winnerCandidates = getWinnerCandidates(matches);
+  const winnerPrediction = userWinnerPredict ? userWinnerPredict.Team_Predict : null;
+  const winnerPredictionEliminated = Boolean(
+    winnerPrediction &&
+    winnerCandidates.length > 0 &&
+    !winnerCandidates.some(team => normalizeTeamName(team) === normalizeTeamName(winnerPrediction))
+  );
   
   return jsonResponse({
     matches: matchesResult,
-    winnerPrediction: userWinnerPredict ? userWinnerPredict.Team_Predict : null,
-    isWinnerLocked: isWinnerLocked
+    winnerPrediction: winnerPrediction,
+    isWinnerLocked: isWinnerLocked,
+    winnerCandidates: winnerCandidates,
+    winnerPredictionEliminated: winnerPredictionEliminated
   });
 }
 
@@ -256,6 +265,78 @@ function shouldIncludeMatchForMode(match, mode, dateFilter) {
 
 function getBangkokDateKey(date) {
   return Utilities.formatDate(date, "Asia/Bangkok", "yyyy-MM-dd");
+}
+
+
+function getWinnerCandidates(matches) {
+  const candidateStages = [
+    ["semifinal", isSemifinalStage],
+    ["quarterfinal", isQuarterfinalStage],
+    ["roundOf16", isRoundOf16Stage]
+  ];
+
+  for (const [, matcher] of candidateStages) {
+    const teams = getConcreteTeamsFromStage(matches, matcher);
+    if (teams.length > 0) {
+      return teams;
+    }
+  }
+
+  return [];
+}
+
+function getConcreteTeamsFromStage(matches, stageMatcher) {
+  const uniqueTeams = {};
+  const teams = [];
+
+  matches
+    .filter(match => stageMatcher(match.Stage))
+    .forEach(match => {
+      [match.Home_Team, match.Away_Team].forEach(teamName => {
+        if (!isConcreteTeamName(teamName)) return;
+        const normalizedTeam = normalizeTeamName(teamName);
+        if (!uniqueTeams[normalizedTeam]) {
+          uniqueTeams[normalizedTeam] = true;
+          teams.push(String(teamName).trim());
+        }
+      });
+    });
+
+  return teams.sort((a, b) => a.localeCompare(b));
+}
+
+function isConcreteTeamName(teamName) {
+  const normalizedTeam = normalizeTeamName(teamName);
+  const readableTeam = normalizedTeam.replace(/[-_]+/g, " ");
+  if (!readableTeam) return false;
+  return !/^tbd$/.test(readableTeam) &&
+    !/^to be decided$/.test(readableTeam) &&
+    !/^winners? /.test(readableTeam) &&
+    !/^runner up /.test(readableTeam) &&
+    !/^losers? /.test(readableTeam) &&
+    !/^[12][a-z]$/.test(readableTeam) &&
+    !/^1st /.test(readableTeam) &&
+    !/^2nd /.test(readableTeam) &&
+    !/^group /.test(readableTeam);
+}
+
+function normalizeStageName(stage) {
+  return String(stage || "").toLowerCase().replace(/[\s_-]+/g, " ").trim();
+}
+
+function isRoundOf16Stage(stage) {
+  const normalizedStage = normalizeStageName(stage);
+  return ["round of 16", "round 16", "last 16", "r16", "16"].includes(normalizedStage);
+}
+
+function isQuarterfinalStage(stage) {
+  const normalizedStage = normalizeStageName(stage);
+  return ["quarterfinals", "quarter finals", "quarter-finals", "quarter final", "quarter-final"].includes(normalizedStage);
+}
+
+function isSemifinalStage(stage) {
+  const normalizedStage = normalizeStageName(stage);
+  return ["semifinals", "semi finals", "semi-finals", "semifinal", "semi final", "semi-final"].includes(normalizedStage);
 }
 
 function handleSubmitPrediction(body) {
@@ -311,9 +392,14 @@ function handleSubmitWinnerPrediction(body) {
   const matchSheet = ss.getSheetByName("Matches");
   const matches = getSheetData(matchSheet);
   
-  const firstSemifinal = matches.find(m => String(m.Stage).toLowerCase() === "semifinals");
+  const firstSemifinal = matches.find(m => isSemifinalStage(m.Stage));
   if (firstSemifinal && new Date() >= new Date(firstSemifinal.Kickoff_Time)) {
     return jsonResponse({ error: "Prediction closed: Semifinals have already started!" }, 400);
+  }
+
+  const winnerCandidates = getWinnerCandidates(matches);
+  if (winnerCandidates.length > 0 && !winnerCandidates.some(team => normalizeTeamName(team) === normalizeTeamName(teamPredict))) {
+    return jsonResponse({ error: "Selected team has been eliminated. Please choose a team that is still in the tournament." }, 400);
   }
   
   const winSheet = ss.getSheetByName("Tournament_Winner_Submissions");

@@ -5,10 +5,13 @@ const SHOW_OPENCHAT = false; // Set to true when the LINE OpenChat/OA link is re
 
 let currentUser = null; // { employeeId, fullName, lineUserId }
 let matchesData = [];
+let defaultChampionOptionsHtml = "";
 let requestedInitialScreen = new URLSearchParams(window.location.search).get("screen") || "matches";
 
 // Initialize App
 document.addEventListener("DOMContentLoaded", () => {
+  const championSelect = document.getElementById("select-champion");
+  defaultChampionOptionsHtml = championSelect ? championSelect.innerHTML : "";
   configureOpenChatBanner();
   initLiff();
   setupEventListeners();
@@ -578,13 +581,25 @@ function loadWinnerScreen() {
     .then(data => {
       const select = document.getElementById("select-champion");
       const submitBtn = document.getElementById("btn-submit-winner");
+      const winnerCandidates = Array.isArray(data.winnerCandidates) ? data.winnerCandidates : [];
+      const hasDynamicCandidates = winnerCandidates.length > 0;
 
-      if (data.winnerPrediction) {
+      if (hasDynamicCandidates) {
+        renderChampionOptions(select, winnerCandidates);
+      } else if (defaultChampionOptionsHtml) {
+        select.innerHTML = defaultChampionOptionsHtml;
+      }
+
+      if (data.winnerPrediction && !data.winnerPredictionEliminated) {
         select.value = data.winnerPrediction;
         submitBtn.textContent = "แก้ไขคำทำนายแชมป์โลก";
       } else {
         select.value = "";
-        submitBtn.textContent = "ส่งคำทำนายแชมป์โลก";
+        submitBtn.textContent = data.winnerPredictionEliminated ? "เลือกทีมใหม่" : "ส่งคำทำนายแชมป์โลก";
+      }
+
+      if (data.winnerPredictionEliminated) {
+        showToast("ทีมที่คุณเลือกตกรอบแล้ว กรุณาเลือกใหม่", "error");
       }
 
       if (data.isWinnerLocked) {
@@ -599,6 +614,16 @@ function loadWinnerScreen() {
     .catch(err => {
       showToast("ดึงคำทำนายแชมป์โรคล้มเหลว", "error");
     });
+}
+
+function renderChampionOptions(select, teams) {
+  select.innerHTML = `<option value="">-- เลือกทีมแชมป์โลก --</option>`;
+  teams.forEach(team => {
+    const option = document.createElement("option");
+    option.value = team;
+    option.textContent = team;
+    select.appendChild(option);
+  });
 }
 
 function handleSubmitWinner() {
