@@ -675,14 +675,13 @@ function loadLeaderboard() {
 
 function renderLeaderboard(board, currentUserRow = null) {
   const container = document.getElementById("leaderboard-container");
-  if (board.length === 0) {
+  const rowsToRender = normalizeLeaderboardRows(board, currentUserRow);
+  if (rowsToRender.length === 0) {
     container.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">ยังไม่มีคะแนนการแข่งขันในขณะนี้</p>`;
     return;
   }
 
   container.innerHTML = "";
-
-  const rowsToRender = currentUserRow ? [...board, currentUserRow] : board;
   rowsToRender.forEach((user, index) => {
     const isMe = String(user.Employee_ID) === String(currentUser.employeeId);
     const row = document.createElement("div");
@@ -734,6 +733,28 @@ function renderLeaderboard(board, currentUserRow = null) {
 
     container.appendChild(row);
   });
+}
+
+
+function normalizeLeaderboardRows(board, currentUserRow = null) {
+  const sortedBoard = [...(board || [])].sort((a, b) => {
+    const rankDiff = Number(a.Rank || 9999) - Number(b.Rank || 9999);
+    if (rankDiff !== 0) return rankDiff;
+    const pointDiff = Number(b.Total_Points || 0) - Number(a.Total_Points || 0);
+    if (pointDiff !== 0) return pointDiff;
+    return String(a.Full_Name || "").localeCompare(String(b.Full_Name || ""));
+  });
+
+  const topRows = sortedBoard.slice(0, 10);
+  const currentUserFromBoard = sortedBoard.find(user => String(user.Employee_ID) === String(currentUser.employeeId));
+  const currentUserToAppend = currentUserRow || currentUserFromBoard;
+  const isCurrentUserInTop = topRows.some(user => String(user.Employee_ID) === String(currentUser.employeeId));
+
+  if (currentUserToAppend && !isCurrentUserInTop) {
+    return [...topRows, currentUserToAppend];
+  }
+
+  return topRows;
 }
 
 function loadPredictionHistory() {
