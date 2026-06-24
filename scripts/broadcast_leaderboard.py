@@ -4,8 +4,33 @@ import requests
 
 # Configuration
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://script.google.com/macros/s/REPLACE-WITH-YOUR-GAS-WEB-APP-ID/exec")
-LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
+LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "").strip()
 LINE_LIFF_URL = os.environ.get("LINE_LIFF_URL", "https://liff.line.me/YOUR_LIFF_ID")
+
+def verify_line_access_token():
+    """Verify the configured LINE Messaging API access token before broadcasting."""
+    if not LINE_CHANNEL_ACCESS_TOKEN:
+        return False
+
+    try:
+        response = requests.post(
+            "https://api.line.me/v2/oauth/verify",
+            data={"access_token": LINE_CHANNEL_ACCESS_TOKEN},
+            timeout=15,
+        )
+    except Exception as e:
+        print("Failed to verify LINE channel access token:", e)
+        return False
+
+    if response.status_code == 200:
+        token_info = response.json()
+        print("LINE channel access token verified. client_id:", token_info.get("client_id", "unknown"))
+        return True
+
+    print(f"LINE channel access token verification failed ({response.status_code}):", response.text)
+    print("Hint: LINE_CHANNEL_ACCESS_TOKEN must be a Messaging API channel access token, not the channel secret, LIFF ID, or LINE Login token.")
+    print("Hint: issue/copy the token from LINE Developers Console > Messaging API channel > Messaging API tab > Channel access token.")
+    return False
 
 def build_flex_message(top10):
     """
@@ -90,7 +115,6 @@ def build_flex_message(top10):
         "header": {
             "type": "box",
             "layout": "vertical",
-            "align": "center",
             "contents": [
                 {
                     "type": "text",
@@ -169,6 +193,10 @@ def broadcast_leaderboard():
         print("LINE_CHANNEL_ACCESS_TOKEN is not set. Outputting Flex Message payload locally:")
         print(json.dumps(payload, indent=2, ensure_ascii=False))
         return
+
+    if not verify_line_access_token():
+        print("Skipping broadcast because LINE_CHANNEL_ACCESS_TOKEN is invalid.")
+        return
         
     url_broadcast = "https://api.line.me/v2/bot/message/broadcast"
     headers = {
@@ -183,6 +211,9 @@ def broadcast_leaderboard():
         print("Leaderboard broadcasted successfully!")
     else:
         print(f"Broadcast failed ({response_bc.status_code}):", response_bc.text)
+        if response_bc.status_code == 401:
+            print("Hint: confirm the GitHub secret LINE_CHANNEL_ACCESS_TOKEN contains a valid Messaging API channel access token.")
+            print("Hint: do not use Channel secret, LIFF ID, LINE Login channel token, or a token from a different provider/channel.")
 
 if __name__ == "__main__":
     broadcast_leaderboard()
