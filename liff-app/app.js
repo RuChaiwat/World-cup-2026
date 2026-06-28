@@ -348,8 +348,8 @@ function renderMatches(matches) {
         ? `<span class="lock-badge open">🔓 เปิดรับทายผล</span>`
         : `<span class="lock-badge closed">🔒 ปิดรับทายผล</span>`;
 
-      // Knockout bonus starts from Round of 16 onward, not earlier knockout rounds.
-      const hasKnockoutBonus = isRoundOf16OrLaterStage(m.stage);
+      // Knockout bonus starts from Round of 32 onward, not earlier knockout rounds.
+      const hasKnockoutBonus = isRoundOf32OrLaterStage(m.stage);
       let knockoutSelectionHtml = "";
       if (hasKnockoutBonus) {
         const selectedTeam = pred.qualifiedTeam || "";
@@ -843,7 +843,7 @@ function calculateClientPredictionPoints(match) {
     points += 1;
   }
 
-  if (isRoundOf16OrLaterStage(match.stage)) {
+  if (isRoundOf32OrLaterStage(match.stage)) {
     const predictedQualifiedTeam = match.prediction.qualifiedTeam;
     const actualQualifiedTeam = match.actual.qualifiedTeam;
     if (predictedQualifiedTeam && actualQualifiedTeam && predictedQualifiedTeam === actualQualifiedTeam) {
@@ -854,9 +854,10 @@ function calculateClientPredictionPoints(match) {
   return points;
 }
 
-function isRoundOf16OrLaterStage(stage) {
+function isRoundOf32OrLaterStage(stage) {
   const normalizedStage = String(stage || "").toLowerCase().replace(/[\s_-]+/g, " ").trim();
   return [
+    "round of 32", "round 32", "last 32", "r32", "32",
     "round of 16", "round 16", "last 16", "r16", "16",
     "quarterfinals", "quarter finals", "quarter-finals", "quarter final", "quarter-final",
     "semifinals", "semi finals", "semi-finals", "semifinal", "semi final", "semi-final",

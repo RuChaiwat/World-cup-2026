@@ -523,7 +523,7 @@ function calculatePredictionPointsForSubmission(sub, match) {
     points += 1;
   }
 
-  if (isRoundOf16OrLaterStage(match.Stage)) {
+  if (isRoundOf32OrLaterStage(match.Stage)) {
     const predQualify = sub.Qualified_Team_Predict;
     if (predQualify && predQualify === actQualify) {
       points += 1;
@@ -810,8 +810,8 @@ function recalculateLeaderboard(ss) {
         totalPoints += 1;
       }
       
-      // Knockout bonus starts from Round of 16 onward (+1 pt).
-      if (isRoundOf16OrLaterStage(m.Stage)) {
+      // Knockout bonus starts from Round of 32 onward (+1 pt).
+      if (isRoundOf32OrLaterStage(m.Stage)) {
         const predQualify = pred.Qualified_Team_Predict;
         if (predQualify && predQualify === actQualify) {
           totalPoints += 1;
@@ -892,9 +892,10 @@ function applyDenseRanks(leaderboard) {
   });
 }
 
-function isRoundOf16OrLaterStage(stage) {
+function isRoundOf32OrLaterStage(stage) {
   const normalizedStage = String(stage || "").toLowerCase().replace(/[\s_-]+/g, " ").trim();
   return [
+    "round of 32", "round 32", "last 32", "r32", "32",
     "round of 16", "round 16", "last 16", "r16", "16",
     "quarterfinals", "quarter finals", "quarter-finals", "quarter final", "quarter-final",
     "semifinals", "semi finals", "semi-finals", "semifinal", "semi final", "semi-final",
