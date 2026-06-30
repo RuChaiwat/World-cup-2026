@@ -96,14 +96,18 @@ def parse_api_sports_fixture(f):
     away_team = (f["teams"].get("away") or {}).get("name") or ""
     if not home_team or not away_team:
         return None
-    goals_home = f["goals"].get("home")
-    goals_away = f["goals"].get("away")
+    regular_score = get_api_sports_regular_time_score(f)
+    goals_home = regular_score.get("home")
+    goals_away = regular_score.get("away")
     match_status = map_api_sports_status(status_api)
 
     qualified_team = ""
-    if status_api == "PEN":
-        penalty_winner = f["teams"]["home"].get("winner")
-        qualified_team = home_team if penalty_winner else away_team
+    home_winner = (f["teams"].get("home") or {}).get("winner")
+    away_winner = (f["teams"].get("away") or {}).get("winner")
+    if home_winner is True:
+        qualified_team = home_team
+    elif away_winner is True:
+        qualified_team = away_team
     elif goals_home is not None and goals_away is not None and goals_home > goals_away:
         qualified_team = home_team
     elif goals_home is not None and goals_away is not None and goals_away > goals_home:
@@ -122,6 +126,20 @@ def parse_api_sports_fixture(f):
     }
 
 
+def get_api_sports_regular_time_score(f):
+    # API-SPORTS `goals` can represent the final score after extra time/penalties.
+    # For prediction scoring we use the 90-minute score (`score.fulltime`) when present.
+    fulltime_score = (f.get("score") or {}).get("fulltime") or {}
+    home_score = fulltime_score.get("home")
+    away_score = fulltime_score.get("away")
+    if home_score is not None and away_score is not None:
+        return {"home": home_score, "away": away_score}
+    return {
+        "home": (f.get("goals") or {}).get("home"),
+        "away": (f.get("goals") or {}).get("away"),
+    }
+
+
 def map_api_sports_status(status_api):
     if status_api in ["FT", "AET", "PEN"]:
         return "Finished"
@@ -135,9 +153,9 @@ def parse_football_data_match(match):
     away_team = (match.get("awayTeam") or {}).get("name") or ""
     if not home_team or not away_team:
         return None
-    full_time_score = match.get("score", {}).get("fullTime", {})
-    goals_home = full_time_score.get("home")
-    goals_away = full_time_score.get("away")
+    regular_time_score = get_football_data_regular_time_score(match)
+    goals_home = regular_time_score.get("home")
+    goals_away = regular_time_score.get("away")
     match_status = map_football_data_status(match.get("status"))
 
     winner = match.get("score", {}).get("winner")
@@ -158,6 +176,18 @@ def parse_football_data_match(match):
         "status": match_status,
         "qualifiedTeam": qualified_team,
     }
+
+
+def get_football_data_regular_time_score(match):
+    # football-data may expose a `regularTime` object for knockout matches.
+    # Prefer it so draw predictions are scored on the 90-minute result.
+    score = match.get("score", {}) or {}
+    regular_time_score = score.get("regularTime") or {}
+    home_score = regular_time_score.get("home")
+    away_score = regular_time_score.get("away")
+    if home_score is not None and away_score is not None:
+        return {"home": home_score, "away": away_score}
+    return score.get("fullTime", {}) or {}
 
 
 def map_football_data_status(status):
