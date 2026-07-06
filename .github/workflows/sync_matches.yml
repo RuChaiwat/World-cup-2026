@@ -1,0 +1,35 @@
+name: Sync Match Data and Calculate Leaderboard
+
+on:
+  schedule:
+    # Runs every 2 hours
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+    # Allows manual execution from GitHub interface
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository code
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+
+      - name: Run Match Sync Script
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
+          # Default provider is football-data.org because its free tier includes the World Cup.
+          # Set FOOTBALL_API_PROVIDER=api-sports only if using a paid API-SPORTS plan that supports 2026.
+          FOOTBALL_API_PROVIDER: ${{ vars.FOOTBALL_API_PROVIDER || 'football-data' }}
+          FOOTBALL_API_KEY: ${{ secrets.FOOTBALL_API_KEY }}
+          FOOTBALL_API_URL: ${{ vars.FOOTBALL_API_URL || 'https://v3.football.api-sports.io/fixtures' }}
+          FOOTBALL_DATA_URL: ${{ vars.FOOTBALL_DATA_URL || 'https://api.football-data.org/v4/competitions/WC/matches' }}
+          SYNC_BATCH_SIZE: ${{ vars.SYNC_BATCH_SIZE || '20' }}
+          # MOCK_API: "false"
+        run: python scripts/sync_matches.py
