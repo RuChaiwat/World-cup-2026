@@ -581,8 +581,16 @@ function loadWinnerScreen() {
     .then(data => {
       const select = document.getElementById("select-champion");
       const submitBtn = document.getElementById("btn-submit-winner");
-      const winnerCandidates = Array.isArray(data.winnerCandidates) ? data.winnerCandidates : [];
+      const apiWinnerCandidates = Array.isArray(data.winnerCandidates) ? data.winnerCandidates : [];
+      const fallbackWinnerCandidates = apiWinnerCandidates.length > 0
+        ? []
+        : buildWinnerCandidatesFromMatches(data.matches || []);
+      const winnerCandidates = apiWinnerCandidates.length > 0 ? apiWinnerCandidates : fallbackWinnerCandidates;
       const hasDynamicCandidates = winnerCandidates.length > 0;
+      const winnerPredictionEliminated = Boolean(
+        data.winnerPredictionEliminated ||
+        (data.winnerPrediction && hasDynamicCandidates && !winnerCandidates.some(team => normalizeCandidateName(team) === normalizeCandidateName(data.winnerPrediction)))
+      );
 
       if (hasDynamicCandidates) {
         renderChampionOptions(select, winnerCandidates);
@@ -590,15 +598,15 @@ function loadWinnerScreen() {
         select.innerHTML = defaultChampionOptionsHtml;
       }
 
-      if (data.winnerPrediction && !data.winnerPredictionEliminated) {
+      if (data.winnerPrediction && !winnerPredictionEliminated) {
         select.value = data.winnerPrediction;
         submitBtn.textContent = "แก้ไขคำทำนายแชมป์โลก";
       } else {
         select.value = "";
-        submitBtn.textContent = data.winnerPredictionEliminated ? "เลือกทีมใหม่" : "ส่งคำทำนายแชมป์โลก";
+        submitBtn.textContent = winnerPredictionEliminated ? "เลือกทีมใหม่" : "ส่งคำทำนายแชมป์โลก";
       }
 
-      if (data.winnerPredictionEliminated) {
+      if (winnerPredictionEliminated) {
         showToast("ทีมที่คุณเลือกตกรอบแล้ว กรุณาเลือกใหม่", "error");
       }
 
@@ -624,6 +632,80 @@ function renderChampionOptions(select, teams) {
     option.textContent = team;
     select.appendChild(option);
   });
+}
+
+function buildWinnerCandidatesFromMatches(matches) {
+  const candidateStages = [
+    isSemifinalStage,
+    isQuarterfinalStage,
+    isRoundOf16Stage,
+    isRoundOf32Stage
+  ];
+
+  for (const stageMatcher of candidateStages) {
+    const teams = getConcreteTeamsFromMatches(matches, stageMatcher);
+    if (teams.length > 0) return teams;
+  }
+
+  return [];
+}
+
+function getConcreteTeamsFromMatches(matches, stageMatcher) {
+  const uniqueTeams = {};
+  const teams = [];
+
+  (matches || [])
+    .filter(match => stageMatcher(match.stage))
+    .forEach(match => {
+      [match.homeTeam, match.awayTeam].forEach(teamName => {
+        if (!isConcreteCandidateTeam(teamName)) return;
+        const normalizedTeam = normalizeCandidateName(teamName);
+        if (!uniqueTeams[normalizedTeam]) {
+          uniqueTeams[normalizedTeam] = true;
+          teams.push(String(teamName).trim());
+        }
+      });
+    });
+
+  return teams.sort((a, b) => a.localeCompare(b));
+}
+
+function isConcreteCandidateTeam(teamName) {
+  const readableTeam = normalizeCandidateName(teamName).replace(/[-_]+/g, " ");
+  if (!readableTeam) return false;
+  return !/^tbd$/.test(readableTeam) &&
+    !/^to be decided$/.test(readableTeam) &&
+    !/^winners? /.test(readableTeam) &&
+    !/^runner up /.test(readableTeam) &&
+    !/^losers? /.test(readableTeam) &&
+    !/^[12][a-z]$/.test(readableTeam) &&
+    !/^1st /.test(readableTeam) &&
+    !/^2nd /.test(readableTeam) &&
+    !/^group /.test(readableTeam);
+}
+
+function normalizeCandidateName(value) {
+  return String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function normalizeCandidateStage(stage) {
+  return String(stage || "").toLowerCase().replace(/[\s_-]+/g, " ").trim();
+}
+
+function isRoundOf32Stage(stage) {
+  return ["round of 32", "round 32", "last 32", "r32", "32"].includes(normalizeCandidateStage(stage));
+}
+
+function isRoundOf16Stage(stage) {
+  return ["round of 16", "round 16", "last 16", "r16", "16"].includes(normalizeCandidateStage(stage));
+}
+
+function isQuarterfinalStage(stage) {
+  return ["quarterfinals", "quarter finals", "quarter-finals", "quarter final", "quarter-final"].includes(normalizeCandidateStage(stage));
+}
+
+function isSemifinalStage(stage) {
+  return ["semifinals", "semi finals", "semi-finals", "semifinal", "semi final", "semi-final"].includes(normalizeCandidateStage(stage));
 }
 
 function handleSubmitWinner() {

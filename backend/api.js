@@ -272,7 +272,8 @@ function getWinnerCandidates(matches) {
   const candidateStages = [
     ["semifinal", isSemifinalStage],
     ["quarterfinal", isQuarterfinalStage],
-    ["roundOf16", isRoundOf16Stage]
+    ["roundOf16", isRoundOf16Stage],
+    ["roundOf32", isRoundOf32Stage]
   ];
 
   for (const [, matcher] of candidateStages) {
@@ -322,6 +323,11 @@ function isConcreteTeamName(teamName) {
 
 function normalizeStageName(stage) {
   return String(stage || "").toLowerCase().replace(/[\s_-]+/g, " ").trim();
+}
+
+function isRoundOf32Stage(stage) {
+  const normalizedStage = normalizeStageName(stage);
+  return ["round of 32", "round 32", "last 32", "r32", "32"].includes(normalizedStage);
 }
 
 function isRoundOf16Stage(stage) {
