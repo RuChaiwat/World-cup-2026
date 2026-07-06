@@ -635,19 +635,46 @@ function renderChampionOptions(select, teams) {
 }
 
 function buildWinnerCandidatesFromMatches(matches) {
-  const candidateStages = [
-    isSemifinalStage,
-    isQuarterfinalStage,
-    isRoundOf16Stage,
-    isRoundOf32Stage
+  const candidateSources = [
+    { currentStage: isSemifinalStage, previousStage: isQuarterfinalStage },
+    { currentStage: isQuarterfinalStage, previousStage: isRoundOf16Stage },
+    { currentStage: isRoundOf16Stage, previousStage: isRoundOf32Stage },
+    { currentStage: isRoundOf32Stage, previousStage: null }
   ];
 
-  for (const stageMatcher of candidateStages) {
-    const teams = getConcreteTeamsFromMatches(matches, stageMatcher);
-    if (teams.length > 0) return teams;
+  for (const source of candidateSources) {
+    const teamsFromCurrentStage = getConcreteTeamsFromMatches(matches, source.currentStage);
+    const teamsQualifiedFromPreviousStage = source.previousStage
+      ? getQualifiedTeamsFromMatches(matches, source.previousStage)
+      : [];
+
+    if (teamsQualifiedFromPreviousStage.length > 0 && teamsQualifiedFromPreviousStage.length >= teamsFromCurrentStage.length) {
+      return teamsQualifiedFromPreviousStage;
+    }
+
+    if (teamsFromCurrentStage.length > 0) return teamsFromCurrentStage;
   }
 
   return [];
+}
+
+function getQualifiedTeamsFromMatches(matches, stageMatcher) {
+  const uniqueTeams = {};
+  const teams = [];
+
+  (matches || [])
+    .filter(match => stageMatcher(match.stage))
+    .forEach(match => {
+      const qualifiedTeam = match.actual ? match.actual.qualifiedTeam : "";
+      if (!isConcreteCandidateTeam(qualifiedTeam)) return;
+      const normalizedTeam = normalizeCandidateName(qualifiedTeam);
+      if (!uniqueTeams[normalizedTeam]) {
+        uniqueTeams[normalizedTeam] = true;
+        teams.push(String(qualifiedTeam).trim());
+      }
+    });
+
+  return teams.sort((a, b) => a.localeCompare(b));
 }
 
 function getConcreteTeamsFromMatches(matches, stageMatcher) {

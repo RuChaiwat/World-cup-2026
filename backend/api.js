@@ -269,17 +269,25 @@ function getBangkokDateKey(date) {
 
 
 function getWinnerCandidates(matches) {
-  const candidateStages = [
-    ["semifinal", isSemifinalStage],
-    ["quarterfinal", isQuarterfinalStage],
-    ["roundOf16", isRoundOf16Stage],
-    ["roundOf32", isRoundOf32Stage]
+  const candidateSources = [
+    { currentStage: isSemifinalStage, previousStage: isQuarterfinalStage },
+    { currentStage: isQuarterfinalStage, previousStage: isRoundOf16Stage },
+    { currentStage: isRoundOf16Stage, previousStage: isRoundOf32Stage },
+    { currentStage: isRoundOf32Stage, previousStage: null }
   ];
 
-  for (const [, matcher] of candidateStages) {
-    const teams = getConcreteTeamsFromStage(matches, matcher);
-    if (teams.length > 0) {
-      return teams;
+  for (const source of candidateSources) {
+    const teamsFromCurrentStage = getConcreteTeamsFromStage(matches, source.currentStage);
+    const teamsQualifiedFromPreviousStage = source.previousStage
+      ? getQualifiedTeamsFromStage(matches, source.previousStage)
+      : [];
+
+    if (teamsQualifiedFromPreviousStage.length > 0 && teamsQualifiedFromPreviousStage.length >= teamsFromCurrentStage.length) {
+      return teamsQualifiedFromPreviousStage;
+    }
+
+    if (teamsFromCurrentStage.length > 0) {
+      return teamsFromCurrentStage;
     }
   }
 
@@ -301,6 +309,25 @@ function getConcreteTeamsFromStage(matches, stageMatcher) {
           teams.push(String(teamName).trim());
         }
       });
+    });
+
+  return teams.sort((a, b) => a.localeCompare(b));
+}
+
+function getQualifiedTeamsFromStage(matches, stageMatcher) {
+  const uniqueTeams = {};
+  const teams = [];
+
+  matches
+    .filter(match => stageMatcher(match.Stage))
+    .forEach(match => {
+      const qualifiedTeam = getSettledQualifier(match);
+      if (!isConcreteTeamName(qualifiedTeam)) return;
+      const normalizedTeam = normalizeTeamName(qualifiedTeam);
+      if (!uniqueTeams[normalizedTeam]) {
+        uniqueTeams[normalizedTeam] = true;
+        teams.push(String(qualifiedTeam).trim());
+      }
     });
 
   return teams.sort((a, b) => a.localeCompare(b));
