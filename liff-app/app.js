@@ -1,12 +1,18 @@
 // CONFIGURATION - Put your deployed Google Apps Script Web App URL here
 const API_BASE_URL = "https://script.google.com/macros/s/AKfycbx3Lu1FeP_pY591MF9OJJv61hEVRL_feSPQ_fkOq6r74ePHpKVCtt9vW97pq-avAMKfqA/exec";
-const OPENCHAT_URL = "https://line.me/ti/g2/YOUR_OPENCHAT_CODE"; // Line OpenChat/Group Join Link
+const OPENCHAT_URL = ""; // Line OpenChat/Group Join Link. Leave blank while OpenChat/OA is temporarily disabled.
+const SHOW_OPENCHAT = false; // Set to true when the LINE OpenChat/OA link is ready to show.
 
 let currentUser = null; // { employeeId, fullName, lineUserId }
 let matchesData = [];
+let defaultChampionOptionsHtml = "";
+let requestedInitialScreen = new URLSearchParams(window.location.search).get("screen") || "matches";
 
 // Initialize App
 document.addEventListener("DOMContentLoaded", () => {
+  const championSelect = document.getElementById("select-champion");
+  defaultChampionOptionsHtml = championSelect ? championSelect.innerHTML : "";
+  configureOpenChatBanner();
   initLiff();
   setupEventListeners();
 });
@@ -17,13 +23,16 @@ function initLiff() {
   liff.init({ liffId: "2010392073-d04GAnnm" })
     .then(() => {
       if (liff.isLoggedIn()) {
-        liff.getProfile()
-          .then(profile => {
-            const lineUserId = profile.userId;
-            checkAutoLogin(lineUserId);
+        resolveLineUserId()
+          .then(lineUserId => {
+            if (lineUserId) {
+              checkAutoLogin(lineUserId);
+            } else {
+              showAuthScreen();
+            }
           })
           .catch(err => {
-            showToast("Failed to retrieve LINE Profile: " + err, "error");
+            console.warn("Failed to resolve LINE User ID:", err);
             showAuthScreen();
           });
       } else {
@@ -37,6 +46,30 @@ function initLiff() {
       // Fallback for browser testing
       showAuthScreen();
     });
+}
+
+function resolveLineUserId() {
+  const context = liff.getContext ? liff.getContext() : null;
+  if (context && context.userId) {
+    return Promise.resolve(context.userId);
+  }
+
+  return liff.getProfile()
+    .then(profile => profile.userId)
+    .catch(err => {
+      console.warn("LIFF profile scope is unavailable; continuing without profile permission.", err);
+      return null;
+    });
+}
+
+
+function configureOpenChatBanner() {
+  const openChatButton = document.getElementById("btn-open-chat");
+  if (!openChatButton) return;
+
+  const shouldShowOpenChat = SHOW_OPENCHAT && Boolean(OPENCHAT_URL);
+  openChatButton.style.display = shouldShowOpenChat ? "flex" : "none";
+  openChatButton.setAttribute("aria-hidden", String(!shouldShowOpenChat));
 }
 
 // Check if LINE User ID is already linked
@@ -75,16 +108,29 @@ function setupEventListeners() {
   });
 
   // OpenChat Link Click Handler
-  document.getElementById("btn-open-chat").addEventListener("click", () => {
-    if (liff.isInClient()) {
-      liff.openWindow({ url: OPENCHAT_URL, external: true });
-    } else {
-      window.open(OPENCHAT_URL, "_blank");
-    }
-  });
+  const openChatButton = document.getElementById("btn-open-chat");
+  if (openChatButton && SHOW_OPENCHAT && OPENCHAT_URL) {
+    openChatButton.addEventListener("click", () => {
+      if (liff.isInClient()) {
+        liff.openWindow({ url: OPENCHAT_URL, external: true });
+      } else {
+        window.open(OPENCHAT_URL, "_blank");
+      }
+    });
+  }
 
   // Submit Winner Prediction Button
   document.getElementById("btn-submit-winner").addEventListener("click", handleSubmitWinner);
+
+  const backLeaderboardButton = document.getElementById("btn-back-leaderboard");
+  if (backLeaderboardButton) {
+    backLeaderboardButton.addEventListener("click", () => switchScreen("leaderboard"));
+  }
+
+  const historyDateInput = document.getElementById("history-date-input");
+  if (historyDateInput) {
+    historyDateInput.addEventListener("change", () => loadHistoryMatches(historyDateInput.value));
+  }
 }
 
 // Handle User Authentication Submission
@@ -164,8 +210,9 @@ function loginUser(employeeId, fullName, lineUserId) {
   document.getElementById("app-header").style.display = "flex";
   document.getElementById("bottom-nav").style.display = "grid";
 
-  // Transition to main matches tab
-  switchScreen("matches");
+  // Transition to requested tab from LIFF/Rich Menu, defaulting to matches.
+  const allowedScreens = ["matches", "winner", "history", "leaderboard", "prediction-detail"];
+  switchScreen(allowedScreens.includes(requestedInitialScreen) ? requestedInitialScreen : "matches");
 }
 
 // 3. Screen Navigation
@@ -197,8 +244,12 @@ function switchScreen(screenId) {
     loadMatches();
   } else if (screenId === "winner") {
     loadWinnerScreen();
+  } else if (screenId === "history") {
+    loadHistoryScreen();
   } else if (screenId === "leaderboard") {
     loadLeaderboard();
+  } else if (screenId === "prediction-detail") {
+    loadPredictionHistory();
   }
 }
 
@@ -222,11 +273,11 @@ function loadMatches() {
   const container = document.getElementById("match-list-container");
   container.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">กำลังโหลดแมตช์การแข่งขัน...</p>`;
 
-  fetch(`${API_BASE_URL}?action=getMatches&employeeId=${currentUser.employeeId}`)
+  fetch(`${API_BASE_URL}?action=getMatches&employeeId=${currentUser.employeeId}&mode=prediction`)
     .then(res => res.json())
     .then(data => {
-      matchesData = data.matches;
-      renderMatches(data.matches);
+      matchesData = data.matches || [];
+      renderMatches(filterPredictionMatches(matchesData));
     })
     .catch(err => {
       showToast("โหลดแมตช์แข่งขันล้มเหลว", "error");
@@ -234,10 +285,27 @@ function loadMatches() {
     });
 }
 
+function filterPredictionMatches(matches) {
+  return (matches || []).filter(isMatchPredictionOpen);
+}
+
+function isMatchPredictionOpen(match) {
+  if (!match) return false;
+  if (match.isPredictionOpen === true) return true;
+  if (match.isPredictionOpen === false) return false;
+
+  const kickoff = new Date(match.kickoffTime);
+  if (isNaN(kickoff.getTime())) return false;
+
+  const now = new Date();
+  const predictionOpenAt = new Date(kickoff.getTime() - (3 * 24 * 60 * 60 * 1000));
+  return now >= predictionOpenAt && now < kickoff;
+}
+
 function renderMatches(matches) {
   const container = document.getElementById("match-list-container");
   if (matches.length === 0) {
-    container.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">ไม่มีรายการแข่งขันในขณะนี้</p>`;
+    container.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">ไม่มีรายการที่เปิดให้ทายผลในช่วง 3 วันก่อนแข่งขัน</p>`;
     return;
   }
 
@@ -270,20 +338,25 @@ function renderMatches(matches) {
       });
 
       // Handle scores and status badges
-      const pred = m.prediction || { homeScore: "", awayScore: "", qualifiedTeam: "" };
-      const lockBadgeHtml = m.isLocked
-        ? `<span class="lock-badge closed">🔒 ปิดรับทายผล</span>`
-        : `<span class="lock-badge open">🔓 เปิดรับทายผล</span>`;
+      const hasPrediction = Boolean(m.prediction && m.prediction.timestamp);
+      const pred = hasPrediction
+        ? m.prediction
+        : { homeScore: 0, awayScore: 0, qualifiedTeam: "", timestamp: "" };
+      const isPredictionOpen = isMatchPredictionOpen(m);
+      const isMatchLocked = m.isLocked === true || !isPredictionOpen;
+      const lockBadgeHtml = isPredictionOpen
+        ? `<span class="lock-badge open">🔓 เปิดรับทายผล</span>`
+        : `<span class="lock-badge closed">🔒 ปิดรับทายผล</span>`;
 
-      // Knockout stage team qualifier picker
-      const isKnockout = m.stage && String(m.stage).toLowerCase() !== "group";
+      // Knockout bonus starts from Round of 32 onward, not earlier knockout rounds.
+      const hasKnockoutBonus = isRoundOf32OrLaterStage(m.stage);
       let knockoutSelectionHtml = "";
-      if (isKnockout) {
+      if (hasKnockoutBonus) {
         const selectedTeam = pred.qualifiedTeam || "";
         knockoutSelectionHtml = `
           <div class="form-group" style="margin-top: 8px;">
             <label class="form-label" style="font-size: 11px;">ทีมที่จะผ่านเข้ารอบ (Knockout Stage Bonus)</label>
-            <select class="champ-select qual-picker" id="qualify-${m.matchId}" ${m.isLocked ? 'disabled' : ''} style="padding: 8px; font-size: 13px;">
+            <select class="champ-select qual-picker" id="qualify-${m.matchId}" ${isMatchLocked ? 'disabled' : ''} style="padding: 8px; font-size: 13px;">
               <option value="">-- เลือกทีมเข้ารอบ --</option>
               <option value="${m.homeTeam}" ${selectedTeam === m.homeTeam ? 'selected' : ''}>${m.homeTeam}</option>
               <option value="${m.awayTeam}" ${selectedTeam === m.awayTeam ? 'selected' : ''}>${m.awayTeam}</option>
@@ -321,15 +394,15 @@ function renderMatches(matches) {
           <!-- VS & Score Entry -->
           <div class="vs-divider">
             <div class="predict-controls">
-              <button class="predict-btn dec" ${m.isLocked ? 'disabled' : ''}>-</button>
+              <button class="predict-btn dec" ${isMatchLocked ? 'disabled' : ''}>-</button>
               <input type="text" class="predict-input home-score-val" value="${pred.homeScore}" readonly id="score-home-${m.matchId}">
-              <button class="predict-btn inc" ${m.isLocked ? 'disabled' : ''}>+</button>
+              <button class="predict-btn inc" ${isMatchLocked ? 'disabled' : ''}>+</button>
             </div>
             <span class="vs-text">VS</span>
             <div class="predict-controls">
-              <button class="predict-btn dec" ${m.isLocked ? 'disabled' : ''}>-</button>
+              <button class="predict-btn dec" ${isMatchLocked ? 'disabled' : ''}>-</button>
               <input type="text" class="predict-input away-score-val" value="${pred.awayScore}" readonly id="score-away-${m.matchId}">
-              <button class="predict-btn inc" ${m.isLocked ? 'disabled' : ''}>+</button>
+              <button class="predict-btn inc" ${isMatchLocked ? 'disabled' : ''}>+</button>
             </div>
           </div>
           
@@ -343,8 +416,8 @@ function renderMatches(matches) {
         ${knockoutSelectionHtml}
         ${actualScoreHtml}
         
-        <button class="card-action submit-pred-btn" data-id="${m.matchId}" ${m.isLocked ? 'disabled' : ''}>
-          ${pred.timestamp ? 'แก้ไขคำทายผล' : 'ส่งคำทายผล'}
+        <button class="card-action submit-pred-btn" data-id="${m.matchId}" ${!isPredictionOpen ? 'disabled' : ''}>
+          ${hasPrediction ? 'แก้ไขคำทายผล' : 'ส่งคำทายผล'}
         </button>
       `;
 
@@ -382,6 +455,11 @@ function renderMatches(matches) {
           return;
         }
 
+        if (!isPredictionOpen) {
+          showToast("ปิดรับทายผลสำหรับแมตช์นี้แล้ว", "error");
+          return;
+        }
+
         submitPrediction(matchId, homeVal, awayVal, qualVal);
       });
 
@@ -396,6 +474,7 @@ function submitPrediction(matchId, homeScore, awayScore, qualifiedTeam) {
 
   fetch(`${API_BASE_URL}?action=submitPrediction`, {
     method: "POST",
+    headers: { "Content-Type": "text/plain" },
     body: JSON.stringify({
       employeeId: currentUser.employeeId,
       matchId,
@@ -419,20 +498,116 @@ function submitPrediction(matchId, homeScore, awayScore, qualifiedTeam) {
     });
 }
 
-// 5. Champion Prediction Screen
+
+// 5. Match History Screen
+function loadHistoryScreen() {
+  const dateInput = document.getElementById("history-date-input");
+  if (!dateInput.value) {
+    dateInput.value = getBangkokDateInputValue(new Date());
+  }
+  loadHistoryMatches(dateInput.value);
+}
+
+function loadHistoryMatches(dateValue) {
+  const container = document.getElementById("history-list-container");
+  container.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">กำลังโหลดผลการแข่งขัน...</p>`;
+
+  fetch(`${API_BASE_URL}?action=getMatches&employeeId=${currentUser.employeeId}&mode=history&date=${dateValue}`)
+    .then(res => res.json())
+    .then(data => renderHistoryMatches(filterMatchesByBangkokDate(data.matches || [], dateValue)))
+    .catch(err => {
+      showToast("โหลดผลย้อนหลังล้มเหลว", "error");
+      container.innerHTML = `<p style="text-align: center; color: var(--accent-red);">เกิดข้อผิดพลาดในการโหลดผลย้อนหลัง</p>`;
+      console.error(err);
+    });
+}
+
+function filterMatchesByBangkokDate(matches, dateValue) {
+  return (matches || []).filter(match => {
+    const kickoff = new Date(match.kickoffTime);
+    if (isNaN(kickoff.getTime())) return false;
+    return getBangkokDateInputValue(kickoff) === dateValue;
+  });
+}
+
+function renderHistoryMatches(matches) {
+  const container = document.getElementById("history-list-container");
+  if (matches.length === 0) {
+    container.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">ไม่มีการแข่งขันในวันที่เลือก</p>`;
+    return;
+  }
+
+  container.innerHTML = "";
+  matches.forEach(m => {
+    const timeStr = new Date(m.kickoffTime).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+    const actualHome = m.actual.homeScore !== null && m.actual.homeScore !== "" ? m.actual.homeScore : "-";
+    const actualAway = m.actual.awayScore !== null && m.actual.awayScore !== "" ? m.actual.awayScore : "-";
+    const pred = m.prediction;
+    const card = document.createElement("div");
+    card.className = "match-card glass-panel locked";
+    card.innerHTML = `
+      <div class="match-meta">
+        <span class="stage-badge">${m.stage}</span>
+        <span>เวลา ${timeStr} น.</span>
+        <span class="lock-badge closed">${m.status || "Scheduled"}</span>
+      </div>
+      <div class="match-body">
+        <div class="team-container"><img class="flag-icon" src="https://flagcdn.com/w80/${getTeamCode(m.homeTeam)}.png" onerror="this.src='https://flagcdn.com/w80/un.png'" alt="${m.homeTeam}"><div class="team-name">${m.homeTeam}</div></div>
+        <div class="vs-divider"><span class="vs-text">ผลการแข่งขัน</span><div class="score-display">${actualHome} - ${actualAway}</div></div>
+        <div class="team-container"><img class="flag-icon" src="https://flagcdn.com/w80/${getTeamCode(m.awayTeam)}.png" onerror="this.src='https://flagcdn.com/w80/un.png'" alt="${m.awayTeam}"><div class="team-name">${m.awayTeam}</div></div>
+      </div>
+      ${m.actual.qualifiedTeam ? `<div style="text-align:center; font-size:12px; color: var(--primary);">${m.actual.qualifiedTeam} เข้ารอบ</div>` : ""}
+      ${pred ? `<div style="text-align:center; font-size:12px; color: var(--text-secondary); margin-top:8px;">คำทายของคุณ: ${pred.homeScore} - ${pred.awayScore}</div>` : ""}
+    `;
+    container.appendChild(card);
+  });
+}
+
+function getBangkokDateInputValue(date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+// 6. Champion Prediction Screen
 function loadWinnerScreen() {
   fetch(`${API_BASE_URL}?action=getMatches&employeeId=${currentUser.employeeId}`)
     .then(res => res.json())
     .then(data => {
       const select = document.getElementById("select-champion");
       const submitBtn = document.getElementById("btn-submit-winner");
+      const apiWinnerCandidates = Array.isArray(data.winnerCandidates) ? data.winnerCandidates : [];
+      const fallbackWinnerCandidates = apiWinnerCandidates.length > 0
+        ? []
+        : buildWinnerCandidatesFromMatches(data.matches || []);
+      const winnerCandidates = apiWinnerCandidates.length > 0 ? apiWinnerCandidates : fallbackWinnerCandidates;
+      const hasDynamicCandidates = winnerCandidates.length > 0;
+      const winnerPredictionEliminated = Boolean(
+        data.winnerPredictionEliminated ||
+        (data.winnerPrediction && hasDynamicCandidates && !winnerCandidates.some(team => normalizeCandidateName(team) === normalizeCandidateName(data.winnerPrediction)))
+      );
 
-      if (data.winnerPrediction) {
+      if (hasDynamicCandidates) {
+        renderChampionOptions(select, winnerCandidates);
+      } else if (defaultChampionOptionsHtml) {
+        select.innerHTML = defaultChampionOptionsHtml;
+      }
+
+      if (data.winnerPrediction && !winnerPredictionEliminated) {
         select.value = data.winnerPrediction;
         submitBtn.textContent = "แก้ไขคำทำนายแชมป์โลก";
       } else {
         select.value = "";
-        submitBtn.textContent = "ส่งคำทำนายแชมป์โลก";
+        submitBtn.textContent = winnerPredictionEliminated ? "เลือกทีมใหม่" : "ส่งคำทำนายแชมป์โลก";
+      }
+
+      if (winnerPredictionEliminated) {
+        showToast("ทีมที่คุณเลือกตกรอบแล้ว กรุณาเลือกใหม่", "error");
       }
 
       if (data.isWinnerLocked) {
@@ -447,6 +622,117 @@ function loadWinnerScreen() {
     .catch(err => {
       showToast("ดึงคำทำนายแชมป์โรคล้มเหลว", "error");
     });
+}
+
+function renderChampionOptions(select, teams) {
+  select.innerHTML = `<option value="">-- เลือกทีมแชมป์โลก --</option>`;
+  teams.forEach(team => {
+    const option = document.createElement("option");
+    option.value = team;
+    option.textContent = team;
+    select.appendChild(option);
+  });
+}
+
+function buildWinnerCandidatesFromMatches(matches) {
+  const candidateSources = [
+    { currentStage: isSemifinalStage, previousStage: isQuarterfinalStage },
+    { currentStage: isQuarterfinalStage, previousStage: isRoundOf16Stage },
+    { currentStage: isRoundOf16Stage, previousStage: isRoundOf32Stage },
+    { currentStage: isRoundOf32Stage, previousStage: null }
+  ];
+
+  for (const source of candidateSources) {
+    const teamsFromCurrentStage = getConcreteTeamsFromMatches(matches, source.currentStage);
+    const teamsQualifiedFromPreviousStage = source.previousStage
+      ? getQualifiedTeamsFromMatches(matches, source.previousStage)
+      : [];
+
+    if (teamsQualifiedFromPreviousStage.length > 0 && teamsQualifiedFromPreviousStage.length >= teamsFromCurrentStage.length) {
+      return teamsQualifiedFromPreviousStage;
+    }
+
+    if (teamsFromCurrentStage.length > 0) return teamsFromCurrentStage;
+  }
+
+  return [];
+}
+
+function getQualifiedTeamsFromMatches(matches, stageMatcher) {
+  const uniqueTeams = {};
+  const teams = [];
+
+  (matches || [])
+    .filter(match => stageMatcher(match.stage))
+    .forEach(match => {
+      const qualifiedTeam = match.actual ? match.actual.qualifiedTeam : "";
+      if (!isConcreteCandidateTeam(qualifiedTeam)) return;
+      const normalizedTeam = normalizeCandidateName(qualifiedTeam);
+      if (!uniqueTeams[normalizedTeam]) {
+        uniqueTeams[normalizedTeam] = true;
+        teams.push(String(qualifiedTeam).trim());
+      }
+    });
+
+  return teams.sort((a, b) => a.localeCompare(b));
+}
+
+function getConcreteTeamsFromMatches(matches, stageMatcher) {
+  const uniqueTeams = {};
+  const teams = [];
+
+  (matches || [])
+    .filter(match => stageMatcher(match.stage))
+    .forEach(match => {
+      [match.homeTeam, match.awayTeam].forEach(teamName => {
+        if (!isConcreteCandidateTeam(teamName)) return;
+        const normalizedTeam = normalizeCandidateName(teamName);
+        if (!uniqueTeams[normalizedTeam]) {
+          uniqueTeams[normalizedTeam] = true;
+          teams.push(String(teamName).trim());
+        }
+      });
+    });
+
+  return teams.sort((a, b) => a.localeCompare(b));
+}
+
+function isConcreteCandidateTeam(teamName) {
+  const readableTeam = normalizeCandidateName(teamName).replace(/[-_]+/g, " ");
+  if (!readableTeam) return false;
+  return !/^tbd$/.test(readableTeam) &&
+    !/^to be decided$/.test(readableTeam) &&
+    !/^winners? /.test(readableTeam) &&
+    !/^runner up /.test(readableTeam) &&
+    !/^losers? /.test(readableTeam) &&
+    !/^[12][a-z]$/.test(readableTeam) &&
+    !/^1st /.test(readableTeam) &&
+    !/^2nd /.test(readableTeam) &&
+    !/^group /.test(readableTeam);
+}
+
+function normalizeCandidateName(value) {
+  return String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function normalizeCandidateStage(stage) {
+  return String(stage || "").toLowerCase().replace(/[\s_-]+/g, " ").trim();
+}
+
+function isRoundOf32Stage(stage) {
+  return ["round of 32", "round 32", "last 32", "r32", "32"].includes(normalizeCandidateStage(stage));
+}
+
+function isRoundOf16Stage(stage) {
+  return ["round of 16", "round 16", "last 16", "r16", "16"].includes(normalizeCandidateStage(stage));
+}
+
+function isQuarterfinalStage(stage) {
+  return ["quarterfinals", "quarter finals", "quarter-finals", "quarter final", "quarter-final"].includes(normalizeCandidateStage(stage));
+}
+
+function isSemifinalStage(stage) {
+  return ["semifinals", "semi finals", "semi-finals", "semifinal", "semi final", "semi-final"].includes(normalizeCandidateStage(stage));
 }
 
 function handleSubmitWinner() {
@@ -480,15 +766,15 @@ function handleSubmitWinner() {
     });
 }
 
-// 6. Leaderboard Tab Operations
+// 7. Leaderboard Tab Operations
 function loadLeaderboard() {
   const container = document.getElementById("leaderboard-container");
   container.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">กำลังโหลดตารางคะแนน...</p>`;
 
-  fetch(`${API_BASE_URL}?action=getLeaderboard`)
+  fetch(`${API_BASE_URL}?action=getLeaderboard&employeeId=${currentUser.employeeId}`)
     .then(res => res.json())
     .then(data => {
-      renderLeaderboard(data.leaderboard);
+      renderLeaderboard(data.leaderboard, data.currentUser);
     })
     .catch(err => {
       showToast("โหลดตารางคะแนนล้มเหลว", "error");
@@ -496,16 +782,16 @@ function loadLeaderboard() {
     });
 }
 
-function renderLeaderboard(board) {
+function renderLeaderboard(board, currentUserRow = null) {
   const container = document.getElementById("leaderboard-container");
-  if (board.length === 0) {
+  const rowsToRender = normalizeLeaderboardRows(board, currentUserRow);
+  if (rowsToRender.length === 0) {
     container.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">ยังไม่มีคะแนนการแข่งขันในขณะนี้</p>`;
     return;
   }
 
   container.innerHTML = "";
-
-  board.forEach((user, index) => {
+  rowsToRender.forEach((user, index) => {
     const isMe = String(user.Employee_ID) === String(currentUser.employeeId);
     const row = document.createElement("div");
 
@@ -530,6 +816,11 @@ function renderLeaderboard(board) {
     const isMedal = isNaN(rankDisplay);
 
     row.className = `leader-row ${rankClass}`;
+    if (isMe) {
+      row.setAttribute("role", "button");
+      row.setAttribute("tabindex", "0");
+      row.setAttribute("aria-label", "เปิดประวัติการทายของฉัน");
+    }
     row.innerHTML = `
       <div class="leader-rank ${isMedal ? 'medal' : ''}">${rankDisplay}</div>
       <div class="leader-name">
@@ -537,6 +828,197 @@ function renderLeaderboard(board) {
         ${isMe ? ' <span style="font-size: 11px; background: var(--secondary); color:#fff; padding: 2px 6px; border-radius: 8px;">คุณ</span>' : ''}
       </div>
       <div class="leader-points">${user.Total_Points} คะแนน</div>
+    `;
+
+    if (isMe) {
+      row.addEventListener("click", () => switchScreen("prediction-detail"));
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          switchScreen("prediction-detail");
+        }
+      });
+    }
+
+    container.appendChild(row);
+  });
+}
+
+
+function normalizeLeaderboardRows(board, currentUserRow = null) {
+  const sortedBoard = [...(board || [])].sort((a, b) => {
+    const rankDiff = Number(a.Rank || 9999) - Number(b.Rank || 9999);
+    if (rankDiff !== 0) return rankDiff;
+    const pointDiff = Number(b.Total_Points || 0) - Number(a.Total_Points || 0);
+    if (pointDiff !== 0) return pointDiff;
+    return String(a.Full_Name || "").localeCompare(String(b.Full_Name || ""));
+  });
+
+  const topRows = sortedBoard.slice(0, 10);
+  const currentUserFromBoard = sortedBoard.find(user => String(user.Employee_ID) === String(currentUser.employeeId));
+  const currentUserToAppend = currentUserRow || currentUserFromBoard;
+  const isCurrentUserInTop = topRows.some(user => String(user.Employee_ID) === String(currentUser.employeeId));
+
+  if (currentUserToAppend && !isCurrentUserInTop) {
+    return [...topRows, currentUserToAppend];
+  }
+
+  return topRows;
+}
+
+function loadPredictionHistory() {
+  const container = document.getElementById("prediction-history-container");
+  container.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">กำลังโหลดประวัติการทาย...</p>`;
+
+  fetch(`${API_BASE_URL}?action=getPredictionHistory&employeeId=${currentUser.employeeId}`)
+    .then(res => res.json())
+    .then(data => {
+      if (data.error) {
+        if (isInvalidGetActionError(data.error)) {
+          return loadPredictionHistoryFallback();
+        }
+        throw new Error(data.error);
+      }
+      renderPredictionHistory(data.predictions || []);
+    })
+    .catch(err => {
+      showToast("โหลดประวัติการทายล้มเหลว", "error");
+      container.innerHTML = `<p style="text-align: center; color: var(--accent-red);">เกิดข้อผิดพลาดในการโหลดประวัติการทาย</p>`;
+      console.error(err);
+    });
+}
+
+function isInvalidGetActionError(errorMessage) {
+  return String(errorMessage || "").toLowerCase().includes("invalid get action");
+}
+
+function loadPredictionHistoryFallback() {
+  console.warn("getPredictionHistory is unavailable; falling back to latest predictions from getMatches.");
+
+  return fetch(`${API_BASE_URL}?action=getMatches&employeeId=${currentUser.employeeId}&mode=all`)
+    .then(res => res.json())
+    .then(data => {
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      const predictions = buildLatestPredictionHistoryFromMatches(data.matches || []);
+      renderPredictionHistory(predictions);
+    });
+}
+
+function buildLatestPredictionHistoryFromMatches(matches) {
+  return (matches || [])
+    .filter(match => match.prediction && match.prediction.timestamp)
+    .map(match => {
+      const points = calculateClientPredictionPoints(match);
+      return {
+        timestamp: match.prediction.timestamp,
+        matchId: match.matchId,
+        homeTeam: match.homeTeam,
+        awayTeam: match.awayTeam,
+        kickoffTime: match.kickoffTime,
+        stage: match.stage,
+        status: match.status,
+        predictedHomeScore: match.prediction.homeScore,
+        predictedAwayScore: match.prediction.awayScore,
+        predictedQualifiedTeam: match.prediction.qualifiedTeam || "",
+        actualHomeScore: match.actual ? match.actual.homeScore : "",
+        actualAwayScore: match.actual ? match.actual.awayScore : "",
+        actualQualifiedTeam: match.actual ? match.actual.qualifiedTeam : "",
+        points: points,
+        isScored: points !== null,
+        isLatestForMatch: true
+      };
+    })
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+}
+
+function calculateClientPredictionPoints(match) {
+  if (!match.actual || match.actual.homeScore === "" || match.actual.homeScore === null || match.actual.homeScore === undefined) {
+    return null;
+  }
+
+  const predHome = Number(match.prediction.homeScore);
+  const predAway = Number(match.prediction.awayScore);
+  const actHome = Number(match.actual.homeScore);
+  const actAway = Number(match.actual.awayScore);
+  let points = 0;
+
+  if (predHome === actHome && predAway === actAway) {
+    points += 3;
+  } else if ((predHome > predAway && actHome > actAway) ||
+             (predHome < predAway && actHome < actAway) ||
+             (predHome === predAway && actHome === actAway)) {
+    points += 1;
+  }
+
+  if (isRoundOf32OrLaterStage(match.stage)) {
+    const predictedQualifiedTeam = match.prediction.qualifiedTeam;
+    const actualQualifiedTeam = match.actual.qualifiedTeam;
+    if (predictedQualifiedTeam && actualQualifiedTeam && predictedQualifiedTeam === actualQualifiedTeam) {
+      points += 1;
+    }
+  }
+
+  return points;
+}
+
+function isRoundOf32OrLaterStage(stage) {
+  const normalizedStage = String(stage || "").toLowerCase().replace(/[\s_-]+/g, " ").trim();
+  return [
+    "round of 32", "round 32", "last 32", "r32", "32",
+    "round of 16", "round 16", "last 16", "r16", "16",
+    "quarterfinals", "quarter finals", "quarter-finals", "quarter final", "quarter-final",
+    "semifinals", "semi finals", "semi-finals", "semifinal", "semi final", "semi-final",
+    "third place", "third-place", "3rd place",
+    "final", "finals"
+  ].includes(normalizedStage);
+}
+
+function renderPredictionHistory(predictions, noticeMessage = "") {
+  const container = document.getElementById("prediction-history-container");
+  if (predictions.length === 0) {
+    container.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">ยังไม่มีประวัติการทายผล</p>`;
+    return;
+  }
+
+  container.innerHTML = noticeMessage
+    ? `<div class="history-notice">${noticeMessage}</div>`
+    : "";
+  predictions.forEach(pred => {
+    const row = document.createElement("div");
+    row.className = "prediction-history-card glass-panel";
+
+    const submittedAt = formatBangkokDateTime(pred.timestamp);
+    const kickoffAt = pred.kickoffTime ? formatBangkokDateTime(pred.kickoffTime) : "-";
+    const pointsText = pred.isScored ? `${pred.points} คะแนน` : "รอผลการแข่งขัน";
+    const pointsClass = pred.isScored ? "scored" : "pending";
+    const latestBadge = pred.isLatestForMatch ? `<span class="history-badge latest">คำทายล่าสุด</span>` : `<span class="history-badge old">คำทายเก่า</span>`;
+    const actualScoreHtml = pred.isScored
+      ? `<div class="history-score-line"><span>ผลจริง</span><strong>${pred.actualHomeScore} - ${pred.actualAwayScore}</strong></div>`
+      : `<div class="history-score-line muted"><span>ผลจริง</span><strong>ยังไม่จบการแข่งขัน</strong></div>`;
+    const qualifierHtml = pred.predictedQualifiedTeam
+      ? `<div class="history-small">ทีมเข้ารอบที่ทาย: ${pred.predictedQualifiedTeam}${pred.actualQualifiedTeam ? ` / ผลจริง: ${pred.actualQualifiedTeam}` : ""}</div>`
+      : "";
+
+    row.innerHTML = `
+      <div class="history-card-header">
+        <div>
+          <div class="history-stage">${pred.stage || "Match"}</div>
+          <div class="history-teams">${pred.homeTeam || "-"} vs ${pred.awayTeam || "-"}</div>
+        </div>
+        <div class="history-points ${pointsClass}">${pointsText}</div>
+      </div>
+      <div class="history-score-grid">
+        <div class="history-score-line"><span>คุณทาย</span><strong>${pred.predictedHomeScore} - ${pred.predictedAwayScore}</strong></div>
+        ${actualScoreHtml}
+      </div>
+      ${qualifierHtml}
+      <div class="history-footer">
+        ${latestBadge}
+        <span>ส่งเมื่อ ${submittedAt}</span>
+      </div>
+      <div class="history-small">Kickoff: ${kickoffAt}</div>
     `;
 
     container.appendChild(row);
@@ -547,15 +1029,48 @@ function renderLeaderboard(board) {
 // FRONTEND UTILITY HELPERS
 // ==========================================
 
-// Map country names to flag codes (from flagcdn.com)
+function formatBangkokDateTime(value) {
+  const date = new Date(value);
+  if (isNaN(date.getTime())) return "-";
+  return date.toLocaleString("th-TH", {
+    timeZone: "Asia/Bangkok",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+// Map country/team names from data providers to flag codes (from flagcdn.com).
+// Keep common aliases because providers may use FIFA names, short names, or local names.
 function getTeamCode(teamName) {
   const map = {
-    "argentina": "ar", "brazil": "br", "england": "gb-eng", "france": "fr",
-    "germany": "de", "spain": "es", "portugal": "pt", "italy": "it",
-    "netherlands": "nl", "belgium": "be", "croatia": "hr", "uruguay": "uy",
-    "mexico": "mx", "usa": "us", "japan": "jp", "south korea": "kr"
+    "argentina": "ar", "australia": "au", "austria": "at", "belgium": "be",
+    "bosnia-herzegovina": "ba", "bosnia and herzegovina": "ba", "brazil": "br",
+    "canada": "ca", "chile": "cl", "colombia": "co", "costa rica": "cr",
+    "croatia": "hr", "curacao": "cw", "curaçao": "cw", "czech republic": "cz",
+    "czechia": "cz", "denmark": "dk", "ecuador": "ec", "england": "gb-eng",
+    "france": "fr", "germany": "de", "ghana": "gh", "haiti": "ht",
+    "iran": "ir", "iran pr": "ir", "italy": "it", "japan": "jp",
+    "mexico": "mx", "morocco": "ma", "netherlands": "nl", "new zealand": "nz",
+    "nigeria": "ng", "paraguay": "py", "peru": "pe", "poland": "pl",
+    "portugal": "pt", "qatar": "qa", "saudi arabia": "sa", "scotland": "gb-sct",
+    "senegal": "sn", "serbia": "rs", "south africa": "za", "south korea": "kr",
+    "korea republic": "kr", "spain": "es", "switzerland": "ch", "turkey": "tr",
+    "türkiye": "tr", "ukraine": "ua", "united states": "us", "united states of america": "us",
+    "usa": "us", "uruguay": "uy", "uzbekistan": "uz", "wales": "gb-wls"
   };
-  return map[String(teamName).toLowerCase().trim()] || "un";
+
+  const normalizedName = String(teamName || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/&/g, "and")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return map[normalizedName] || "un";
 }
 
 // Show standard premium toast notifications
