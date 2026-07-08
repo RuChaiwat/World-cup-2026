@@ -113,6 +113,12 @@ def parse_api_sports_fixture(f):
     elif goals_home is not None and goals_away is not None and goals_away > goals_home:
         qualified_team = away_team
 
+    match_status = infer_match_status(match_status, goals_home, goals_away, qualified_team)
+    if match_status == "Scheduled":
+        goals_home = None
+        goals_away = None
+        qualified_team = ""
+
     return {
         "matchId": f["fixture"]["id"],
         "homeTeam": home_team,
@@ -121,7 +127,7 @@ def parse_api_sports_fixture(f):
         "stage": f.get("league", {}).get("round", ""),
         "homeScore": goals_home,
         "awayScore": goals_away,
-        "status": infer_match_status(match_status, goals_home, goals_away, qualified_team),
+        "status": match_status,
         "qualifiedTeam": qualified_team,
     }
 
@@ -149,11 +155,11 @@ def map_api_sports_status(status_api):
 
 
 def infer_match_status(mapped_status, home_score, away_score, qualified_team=""):
-    """Treat provider rows with actual scores/qualified teams as finished even if the status label is stale or unknown."""
+    """Keep provider schedule/live states, but finish rows that explicitly have a winner/qualifier."""
     if mapped_status == "Finished":
         return "Finished"
-    if home_score is not None and away_score is not None:
-        return "Finished"
+    # Some providers can expose knockout qualifiers before the status text is normalized.
+    # Do not infer Finished from scores alone because scheduled fixtures may carry 0-0 placeholders.
     if qualified_team:
         return "Finished"
     return mapped_status
@@ -176,6 +182,12 @@ def parse_football_data_match(match):
     elif winner == "AWAY_TEAM":
         qualified_team = away_team
 
+    match_status = infer_match_status(match_status, goals_home, goals_away, qualified_team)
+    if match_status == "Scheduled":
+        goals_home = None
+        goals_away = None
+        qualified_team = ""
+
     return {
         "matchId": match["id"],
         "homeTeam": home_team,
@@ -184,7 +196,7 @@ def parse_football_data_match(match):
         "stage": normalize_stage_name(match.get("stage", "")),
         "homeScore": goals_home,
         "awayScore": goals_away,
-        "status": infer_match_status(match_status, goals_home, goals_away, qualified_team),
+        "status": match_status,
         "qualifiedTeam": qualified_team,
     }
 
