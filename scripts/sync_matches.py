@@ -121,7 +121,7 @@ def parse_api_sports_fixture(f):
         "stage": f.get("league", {}).get("round", ""),
         "homeScore": goals_home,
         "awayScore": goals_away,
-        "status": match_status,
+        "status": infer_match_status(match_status, goals_home, goals_away, qualified_team),
         "qualifiedTeam": qualified_team,
     }
 
@@ -146,6 +146,17 @@ def map_api_sports_status(status_api):
     if status_api in ["1H", "HT", "2H", "ET", "BT", "P", "LIVE", "INT"]:
         return "Live"
     return "Scheduled"
+
+
+def infer_match_status(mapped_status, home_score, away_score, qualified_team=""):
+    """Treat provider rows with actual scores/qualified teams as finished even if the status label is stale or unknown."""
+    if mapped_status == "Finished":
+        return "Finished"
+    if home_score is not None and away_score is not None:
+        return "Finished"
+    if qualified_team:
+        return "Finished"
+    return mapped_status
 
 
 def parse_football_data_match(match):
@@ -173,7 +184,7 @@ def parse_football_data_match(match):
         "stage": normalize_stage_name(match.get("stage", "")),
         "homeScore": goals_home,
         "awayScore": goals_away,
-        "status": match_status,
+        "status": infer_match_status(match_status, goals_home, goals_away, qualified_team),
         "qualifiedTeam": qualified_team,
     }
 
@@ -191,7 +202,7 @@ def get_football_data_regular_time_score(match):
 
 
 def map_football_data_status(status):
-    if status == "FINISHED":
+    if status in ["FINISHED", "AWARDED"]:
         return "Finished"
     if status in ["IN_PLAY", "PAUSED"]:
         return "Live"
@@ -330,6 +341,11 @@ def main():
     if not provider_matches:
         print("No provider matches found to synchronize.")
         return
+
+    status_counts = {}
+    for match in provider_matches:
+        status_counts[match.get("status") or "Unknown"] = status_counts.get(match.get("status") or "Unknown", 0) + 1
+    print("Provider status summary:", ", ".join(f"{status}={count}" for status, count in sorted(status_counts.items())))
 
     print("Matches detected from provider:")
     for match in provider_matches[:10]:
