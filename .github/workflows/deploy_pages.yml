@@ -1,0 +1,55 @@
+name: Deploy LIFF App to Pages
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "liff-app/**"
+      - ".github/workflows/deploy_pages.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build static LIFF app
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v6
+
+      - name: Validate static files
+        run: |
+          test -f liff-app/index.html
+          test -f liff-app/app.js
+          test -f liff-app/style.css
+
+      - name: Upload LIFF app artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: ./liff-app
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+      actions: read
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy LIFF app to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
