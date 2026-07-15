@@ -202,9 +202,8 @@ function handleGetMatches(e) {
     .map(m => buildMatchResponse(m, userPredicts[m.Match_ID] || null, now))
     .filter(m => shouldIncludeMatchForMode(m, mode, dateFilter));
   
-  const firstSemifinal = matches.find(m => isSemifinalStage(m.Stage));
-  const winnerLockTime = firstSemifinal ? new Date(firstSemifinal.Kickoff_Time) : null;
-  const isWinnerLocked = winnerLockTime ? (new Date() >= winnerLockTime) : false;
+  const winnerLockInfo = getWinnerLockInfo(matches, now);
+  const isWinnerLocked = winnerLockInfo.isLocked;
   const winnerCandidates = getWinnerCandidates(matches);
   const winnerPrediction = userWinnerPredict ? userWinnerPredict.Team_Predict : null;
   const winnerPredictionEliminated = Boolean(
@@ -217,6 +216,7 @@ function handleGetMatches(e) {
     matches: matchesResult,
     winnerPrediction: winnerPrediction,
     isWinnerLocked: isWinnerLocked,
+    winnerLockTime: winnerLockInfo.lockTime,
     winnerCandidates: winnerCandidates,
     winnerPredictionEliminated: winnerPredictionEliminated
   });
@@ -267,6 +267,27 @@ function getBangkokDateKey(date) {
   return Utilities.formatDate(date, "Asia/Bangkok", "yyyy-MM-dd");
 }
 
+
+function getWinnerLockInfo(matches, now) {
+  const semifinalMatches = matches.filter(m => isSemifinalStage(m.Stage));
+  const kickoffTimes = semifinalMatches
+    .map(m => new Date(m.Kickoff_Time))
+    .filter(date => !isNaN(date.getTime()))
+    .sort((a, b) => a.getTime() - b.getTime());
+  const lockTime = kickoffTimes.length > 0 ? kickoffTimes[0] : null;
+  const lockedByKickoff = Boolean(lockTime && now >= lockTime);
+  const lockedByStatus = semifinalMatches.some(m => isMatchFinished(m) || isMatchLive(m));
+
+  return {
+    isLocked: lockedByKickoff || lockedByStatus,
+    lockTime: lockTime ? lockTime.toISOString() : ""
+  };
+}
+
+function isMatchLive(m) {
+  const status = String(m.Status || "").toLowerCase().trim();
+  return ["live", "in_play", "in play", "paused", "1h", "2h", "ht", "et", "pen"].includes(status);
+}
 
 function getWinnerCandidates(matches) {
   const candidateSources = [
@@ -369,7 +390,11 @@ function isQuarterfinalStage(stage) {
 
 function isSemifinalStage(stage) {
   const normalizedStage = normalizeStageName(stage);
-  return ["semifinals", "semi finals", "semi-finals", "semifinal", "semi final", "semi-final"].includes(normalizedStage);
+  return ["semifinals", "semi finals", "semi-finals", "semifinal", "semi final", "semi-final", "round of 4", "last 4", "r4", "final four", "รอบ 4 ทีมสุดท้าย", "รอบรองชนะเลิศ"].includes(normalizedStage) ||
+    normalizedStage.includes("semifinal") ||
+    normalizedStage.includes("semi final") ||
+    normalizedStage.includes("รอบรอง") ||
+    normalizedStage.includes("4 ทีม");
 }
 
 function handleSubmitPrediction(body) {
@@ -425,8 +450,8 @@ function handleSubmitWinnerPrediction(body) {
   const matchSheet = ss.getSheetByName("Matches");
   const matches = getSheetData(matchSheet);
   
-  const firstSemifinal = matches.find(m => isSemifinalStage(m.Stage));
-  if (firstSemifinal && new Date() >= new Date(firstSemifinal.Kickoff_Time)) {
+  const winnerLockInfo = getWinnerLockInfo(matches, new Date());
+  if (winnerLockInfo.isLocked) {
     return jsonResponse({ error: "Prediction closed: Semifinals have already started!" }, 400);
   }
 

@@ -610,7 +610,8 @@ function loadWinnerScreen() {
         showToast("ทีมที่คุณเลือกตกรอบแล้ว กรุณาเลือกใหม่", "error");
       }
 
-      if (data.isWinnerLocked) {
+      const isWinnerLocked = Boolean(data.isWinnerLocked || isWinnerLockedFromMatches(data.matches || []));
+      if (isWinnerLocked) {
         select.disabled = true;
         submitBtn.disabled = true;
         submitBtn.textContent = "🔒 ปิดรับทายผลแล้ว";
@@ -622,6 +623,25 @@ function loadWinnerScreen() {
     .catch(err => {
       showToast("ดึงคำทำนายแชมป์โรคล้มเหลว", "error");
     });
+}
+
+function isWinnerLockedFromMatches(matches) {
+  const semifinalMatches = (matches || []).filter(match => isSemifinalStage(match.stage));
+  if (semifinalMatches.some(match => isLiveOrFinishedStatus(match.status))) {
+    return true;
+  }
+
+  const kickoffTimes = semifinalMatches
+    .map(match => new Date(match.kickoffTime))
+    .filter(date => !Number.isNaN(date.getTime()))
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  return kickoffTimes.length > 0 && new Date() >= kickoffTimes[0];
+}
+
+function isLiveOrFinishedStatus(status) {
+  const normalizedStatus = String(status || "").toLowerCase().trim();
+  return ["finished", "live", "in_play", "in play", "paused", "1h", "2h", "ht", "et", "pen"].includes(normalizedStatus);
 }
 
 function renderChampionOptions(select, teams) {
@@ -732,7 +752,12 @@ function isQuarterfinalStage(stage) {
 }
 
 function isSemifinalStage(stage) {
-  return ["semifinals", "semi finals", "semi-finals", "semifinal", "semi final", "semi-final"].includes(normalizeCandidateStage(stage));
+  const normalizedStage = normalizeCandidateStage(stage);
+  return ["semifinals", "semi finals", "semi-finals", "semifinal", "semi final", "semi-final", "round of 4", "last 4", "r4", "final four", "รอบ 4 ทีมสุดท้าย", "รอบรองชนะเลิศ"].includes(normalizedStage) ||
+    normalizedStage.includes("semifinal") ||
+    normalizedStage.includes("semi final") ||
+    normalizedStage.includes("รอบรอง") ||
+    normalizedStage.includes("4 ทีม");
 }
 
 function handleSubmitWinner() {
